@@ -59,6 +59,15 @@ const App = {
     if (!this.state.offseasonPhase)    this.state.offseasonPhase = null; // 'free_agency' | 'draft' | 'complete'
     if (!this.state.draftNews)         this.state.draftNews = [];
     if (!this.state.faNews)            this.state.faNews = [];
+    // v1.2 fields
+    if (!this.state.lineups)              this.state.lineups = {};
+    if (!this.state.rotations)            this.state.rotations = {};
+    if (!this.state.bullpenRoles)         this.state.bullpenRoles = {};
+    if (!this.state.tradeHistory)         this.state.tradeHistory = [];
+    if (!this.state.freeAgentPool)        this.state.freeAgentPool = [];
+    if (!this.state.pendingInjuryPopups)  this.state.pendingInjuryPopups = [];
+    if (!this.state.pendingReturnPopups)  this.state.pendingReturnPopups = [];
+    if (!this.state.pendingTradeOffers)   this.state.pendingTradeOffers = [];
   },
 
   /** Restore prospects added via draft to playerMap (they're stored in state, not PLAYERS_DATA) */
@@ -91,6 +100,11 @@ const App = {
       case 'playoffs':     app.innerHTML = Screens.playoffs(this, params); break;
       case 'awards':       app.innerHTML = Screens.awards(this, params); break;
       case 'offseason':    app.innerHTML = Screens.offseason(this, params); break;
+      case 'lineup':       app.innerHTML = Screens.lineup(this, params); break;
+      case 'rotation':     app.innerHTML = Screens.rotation(this, params); break;
+      case 'tradeCenter':  app.innerHTML = Screens.tradeCenter(this, params); break;
+      case 'frontOffice':  app.innerHTML = Screens.frontOffice(this, params); break;
+      case 'freeAgency':   app.innerHTML = Screens.freeAgency(this, params); break;
       default:             app.innerHTML = Screens.teamHub(this, params);
     }
 
@@ -122,6 +136,24 @@ const App = {
       case 'runDraft':       this.runDraft(); break;
       case 'startNewSeason': this.startNewSeason(); break;
       case 'viewOffseason':  this.go('offseason'); break;
+      // Lineup / Rotation
+      case 'lineupTap':      this._lineupTap(parseInt(data.slot)); break;
+      case 'rotationTap':    this._rotationTap(parseInt(data.slot)); break;
+      case 'setBullpenRole': this._setBullpenRole(data.playerId, data.role); break;
+      // Trades
+      case 'selectTradeOpponent': this._selectTradeOpponent(data.teamId); break;
+      case 'toggleMyTradePick':   this._toggleMyTradePick(data.playerId); break;
+      case 'toggleTheirTradePick':this._toggleTheirTradePick(data.playerId); break;
+      case 'proposeTrade':        this._proposeTrade(); break;
+      case 'clearTrade':          this._clearTrade(); break;
+      // Free Agency
+      case 'showFreeAgency':  this._showFreeAgency(); break;
+      case 'signFreeAgent':   this._signFreeAgent(data.playerId); break;
+      // AI Trade Offers
+      case 'acceptTradeOffer': this._acceptTradeOffer(data.offerId); break;
+      case 'rejectTradeOffer': this._rejectTradeOffer(data.offerId); break;
+      // Popups
+      case 'dismissPopup':    this._dismissPopup(); break;
     }
   },
 
@@ -173,6 +205,15 @@ const App = {
       draftNews:         [],
       faNews:            [],
       draftProspects:    [],
+      // v1.2
+      lineups:              {},
+      rotations:            {},
+      bullpenRoles:         {},
+      tradeHistory:         [],
+      freeAgentPool:        [],
+      pendingInjuryPopups:  [],
+      pendingReturnPopups:  [],
+      pendingTradeOffers:   [],
     };
 
     // Init team records
@@ -394,6 +435,8 @@ const App = {
         // Only show activation news for user team players
         if (p && p.teamId === this.state.userTeamId) {
           this.state.news.unshift(`💪 ${p.name} has been activated from the IL.`);
+          if (!this.state.pendingReturnPopups) this.state.pendingReturnPopups = [];
+          this.state.pendingReturnPopups.push(p.name);
         }
       }
     }
@@ -429,16 +472,39 @@ const App = {
 
   _runTradeDeadline() {
     this.state.tradeDeadlineDone = true;
+
+    // Snapshot user team players — they must NOT be auto-traded
+    const userTeamPlayerIds = new Set(
+      Object.values(this.playerMap)
+        .filter(p => p.teamId === this.state.userTeamId)
+        .map(p => p.id)
+    );
+
     const tradeNews = runTradeDeadline(
       this.state.teamRecords,
-      TEAMS_META,
+      // Exclude user team from contenders/sellers so AI won't target their players
+      TEAMS_META.filter(t => t.id !== this.state.userTeamId),
       this.playerMap
     );
+
+    // Safety net: revert any accidental moves of user team players
+    for (const [id, p] of Object.entries(this.playerMap)) {
+      if (userTeamPlayerIds.has(id) && p.teamId !== this.state.userTeamId) {
+        p.teamId = this.state.userTeamId;
+      }
+    }
+
     for (const n of tradeNews) {
       this.state.news.unshift(n);
     }
     if (tradeNews.length > 0) {
       this.state.news.unshift('📅 Trade Deadline has passed!');
+    }
+
+    // Generate AI trade proposals for user to review
+    this._generateAITradeProposals();
+    if (this.state.pendingTradeOffers?.length > 0) {
+      this.state.news.unshift(`📨 You have ${this.state.pendingTradeOffers.length} trade offer(s) waiting! Check Trade Center.`);
     }
   },
 
@@ -452,6 +518,9 @@ const App = {
         this.playerMap[inj.playerId]?.teamId === this.state.userTeamId;
       if (isUserTeam) {
         this.state.news.unshift(`🏥 ${inj.playerName} placed on ${inj.il} (${inj.type})`);
+        // Queue popup
+        if (!this.state.pendingInjuryPopups) this.state.pendingInjuryPopups = [];
+        this.state.pendingInjuryPopups.push(inj);
       }
     }
   },
@@ -639,9 +708,14 @@ const App = {
       this.state.playoffs       = null;
       this.state.awards         = null;
       this.state.offseasonPhase = null;
-      this.state.draftNews      = [];
-      this.state.faNews         = [];
-      this.state.saveDate       = new Date().toISOString();
+      this.state.draftNews            = [];
+      this.state.faNews               = [];
+      this.state.freeAgentPool        = [];
+      this.state.pendingInjuryPopups  = [];
+      this.state.pendingReturnPopups  = [];
+      this.state.pendingTradeOffers   = [];
+      this.state.tradeHistory         = [];
+      this.state.saveDate             = new Date().toISOString();
 
       // Reset team records
       for (const t of TEAMS_META) {
@@ -762,6 +836,283 @@ const App = {
 
   _getLastScheduleDay() {
     return Math.max(...this.state.schedule.map(g => g.day), 0);
+  },
+
+  // ── Lineup / Rotation ─────────────────────────────────────────────────────
+
+  getLineup(teamId) {
+    if (this.state.lineups?.[teamId]?.length > 0) return [...this.state.lineups[teamId]];
+    const posOrder = { C:1,'1B':2,'2B':3,'3B':4,SS:5,LF:6,CF:7,RF:8,DH:9 };
+    const players = this.getTeamPlayers(teamId)
+      .filter(p => !['SP','RP','TWP'].includes(p.position))
+      .sort((a,b) => (posOrder[a.position]||99) - (posOrder[b.position]||99));
+    return players.map(p => p.id);
+  },
+
+  getRotation(teamId) {
+    if (this.state.rotations?.[teamId]?.length > 0) return [...this.state.rotations[teamId]];
+    const sps = this.getTeamPlayers(teamId)
+      .filter(p => p.position === 'SP')
+      .sort((a,b) => b.overall - a.overall);
+    return sps.map(p => p.id);
+  },
+
+  _lineupTap(slot) {
+    if (this.lineupSelect === null || this.lineupSelect === undefined) {
+      this.lineupSelect = slot;
+      this.go('lineup');
+    } else if (this.lineupSelect === slot) {
+      this.lineupSelect = null;
+      this.go('lineup');
+    } else {
+      const lineup = this.getLineup(this.state.userTeamId);
+      [lineup[this.lineupSelect], lineup[slot]] = [lineup[slot], lineup[this.lineupSelect]];
+      if (!this.state.lineups) this.state.lineups = {};
+      this.state.lineups[this.state.userTeamId] = lineup;
+      this.lineupSelect = null;
+      SaveManager.save(this.state);
+      this.go('lineup');
+    }
+  },
+
+  _rotationTap(slot) {
+    if (this.rotSelect === null || this.rotSelect === undefined) {
+      this.rotSelect = slot;
+      this.go('rotation');
+    } else if (this.rotSelect === slot) {
+      this.rotSelect = null;
+      this.go('rotation');
+    } else {
+      const rotation = this.getRotation(this.state.userTeamId);
+      [rotation[this.rotSelect], rotation[slot]] = [rotation[slot], rotation[this.rotSelect]];
+      if (!this.state.rotations) this.state.rotations = {};
+      this.state.rotations[this.state.userTeamId] = rotation;
+      this.rotSelect = null;
+      SaveManager.save(this.state);
+      this.go('rotation');
+    }
+  },
+
+  _setBullpenRole(playerId, role) {
+    if (!this.state.bullpenRoles) this.state.bullpenRoles = {};
+    if (!this.state.bullpenRoles[this.state.userTeamId]) {
+      this.state.bullpenRoles[this.state.userTeamId] = {};
+    }
+    this.state.bullpenRoles[this.state.userTeamId][playerId] = role;
+    SaveManager.save(this.state);
+    this.go('rotation');
+  },
+
+  // ── Trade Center ──────────────────────────────────────────────────────────
+
+  _selectTradeOpponent(teamId) {
+    this.tradeDraft = { opponentId: teamId, myPlayers: [], theirPlayers: [] };
+    this.go('tradeCenter');
+  },
+
+  _toggleMyTradePick(playerId) {
+    if (!this.tradeDraft) this.tradeDraft = { opponentId: null, myPlayers: [], theirPlayers: [] };
+    const idx = this.tradeDraft.myPlayers.indexOf(playerId);
+    if (idx === -1) this.tradeDraft.myPlayers.push(playerId);
+    else this.tradeDraft.myPlayers.splice(idx, 1);
+    this.go('tradeCenter');
+  },
+
+  _toggleTheirTradePick(playerId) {
+    if (!this.tradeDraft) this.tradeDraft = { opponentId: null, myPlayers: [], theirPlayers: [] };
+    const idx = this.tradeDraft.theirPlayers.indexOf(playerId);
+    if (idx === -1) this.tradeDraft.theirPlayers.push(playerId);
+    else this.tradeDraft.theirPlayers.splice(idx, 1);
+    this.go('tradeCenter');
+  },
+
+  _proposeTrade() {
+    if (!this.tradeDraft) return;
+    const { opponentId, myPlayers, theirPlayers } = this.tradeDraft;
+    if (!myPlayers.length || !theirPlayers.length) return;
+
+    const myOVR   = myPlayers.reduce((s,id) => s + (this.playerMap[id]?.overall || 0), 0);
+    const oppOVR  = theirPlayers.reduce((s,id) => s + (this.playerMap[id]?.overall || 0), 0);
+    const accepted = myOVR >= oppOVR - 8;
+
+    let result;
+    if (accepted) {
+      // Execute trade
+      const myNames  = myPlayers.map(id => this.playerMap[id]?.name || id);
+      const oppNames = theirPlayers.map(id => this.playerMap[id]?.name || id);
+
+      for (const id of myPlayers)   if (this.playerMap[id]) this.playerMap[id].teamId = opponentId;
+      for (const id of theirPlayers) if (this.playerMap[id]) this.playerMap[id].teamId = this.state.userTeamId;
+
+      const oppMeta = this.getTeamMeta(opponentId);
+      const summary = `You sent ${myNames.join(', ')} to ${oppMeta.name} for ${oppNames.join(', ')}`;
+      if (!this.state.tradeHistory) this.state.tradeHistory = [];
+      this.state.tradeHistory.push({ summary, day: this.state.season.currentDay });
+      this.state.news.unshift(`🔄 TRADE: ${summary}`);
+      SaveManager.save(this.state);
+
+      result = { accepted: true, message: `${oppMeta.name} accepted! ${summary}.` };
+    } else {
+      const oppMeta = this.getTeamMeta(opponentId);
+      result = {
+        accepted: false,
+        message: `${oppMeta.name} rejected the offer. Your OVR offered (${myOVR}) is too low for their players (${oppOVR}). Try adding more value.`,
+      };
+    }
+
+    this.tradeDraft = null;
+    this.go('tradeCenter', { result });
+  },
+
+  _clearTrade() {
+    this.tradeDraft = null;
+    this.go('tradeCenter');
+  },
+
+  // ── AI Trade Proposals (sent TO the user) ─────────────────────────────────
+
+  _generateAITradeProposals() {
+    // Generate 1–2 AI-initiated offers for the user to review
+    const proposals = [];
+    const aiTeams = TEAMS_META.filter(t => t.id !== this.state.userTeamId)
+      .sort(() => Math.random() - 0.5).slice(0, 2);
+
+    for (const aiTeam of aiTeams) {
+      const theirBest = this.getTeamPlayers(aiTeam.id)
+        .filter(p => p.position !== 'SP')
+        .sort((a,b) => b.overall - a.overall)[0];
+      const myWorst = this.getTeamPlayers(this.state.userTeamId)
+        .filter(p => p.position !== 'SP')
+        .sort((a,b) => a.overall - b.overall)[0];
+      if (!theirBest || !myWorst) continue;
+      proposals.push({
+        id: `offer_${Date.now()}_${aiTeam.id}`,
+        fromTeamId: aiTeam.id,
+        theyOffer: [theirBest.id],
+        theyWant:  [myWorst.id],
+      });
+    }
+    if (!this.state.pendingTradeOffers) this.state.pendingTradeOffers = [];
+    this.state.pendingTradeOffers.push(...proposals);
+  },
+
+  _acceptTradeOffer(offerId) {
+    const offer = this.state.pendingTradeOffers?.find(o => o.id === offerId);
+    if (!offer) return;
+
+    for (const id of offer.theyOffer) if (this.playerMap[id]) this.playerMap[id].teamId = this.state.userTeamId;
+    for (const id of offer.theyWant)  if (this.playerMap[id]) this.playerMap[id].teamId = offer.fromTeamId;
+
+    const aiMeta = this.getTeamMeta(offer.fromTeamId);
+    const givenNames    = offer.theyOffer.map(id => this.playerMap[id]?.name || id);
+    const receivedNames = offer.theyWant.map(id => this.playerMap[id]?.name || id);
+    const summary = `${aiMeta.name} trade offer accepted: You receive ${givenNames.join(', ')} for ${receivedNames.join(', ')}`;
+
+    if (!this.state.tradeHistory) this.state.tradeHistory = [];
+    this.state.tradeHistory.push({ summary, day: this.state.season.currentDay });
+    this.state.news.unshift(`🔄 ${summary}`);
+
+    this.state.pendingTradeOffers = this.state.pendingTradeOffers.filter(o => o.id !== offerId);
+    SaveManager.save(this.state);
+    this.go('tradeCenter', { result: { accepted: true, message: summary } });
+  },
+
+  _rejectTradeOffer(offerId) {
+    if (!this.state.pendingTradeOffers) return;
+    const offer = this.state.pendingTradeOffers.find(o => o.id === offerId);
+    const aiMeta = offer ? this.getTeamMeta(offer.fromTeamId) : null;
+    this.state.pendingTradeOffers = this.state.pendingTradeOffers.filter(o => o.id !== offerId);
+    SaveManager.save(this.state);
+    this.go('tradeCenter', {
+      result: { accepted: false, message: `${aiMeta?.name || 'AI team'} trade offer declined.` }
+    });
+  },
+
+  // ── Free Agency ───────────────────────────────────────────────────────────
+
+  _generateFAPool() {
+    if (!this.state) return;
+    if (this.state.freeAgentPool?.length > 0) return; // already generated
+
+    const userTeamId = this.state.userTeamId;
+    // Pull candidates from AI teams: older players or mid-tier
+    const candidates = Object.values(this.playerMap)
+      .filter(p => p.teamId && p.teamId !== userTeamId && !p.id.startsWith('draft_'))
+      .filter(p => p.age >= 30 || (p.overall >= 72 && Math.random() < 0.12))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 30);
+
+    this.state.freeAgentPool = candidates.map(p => ({
+      playerId:         `fa_${p.id}`,
+      originalPlayerId: p.id,
+      name:             p.name,
+      position:         p.position,
+      overall:          p.overall,
+      salary:           Math.max(570, Math.round(p.salary * 0.9)),
+      age:              p.age,
+      bats:             p.bats  || 'R',
+      throws:           p.throws || 'R',
+      height:           p.height || '6\'0"',
+      weight:           p.weight || 200,
+      batting:          p.batting,
+      pitching:         p.pitching,
+      originalTeamId:   p.teamId,
+      signed:           false,
+    }));
+    this.state.freeAgentPool.sort((a,b) => b.overall - a.overall);
+  },
+
+  _showFreeAgency() {
+    this._generateFAPool();
+    this.go('freeAgency');
+  },
+
+  _signFreeAgent(faPlayerId) {
+    if (!this.state) return;
+    const fa = this.state.freeAgentPool?.find(f => f.playerId === faPlayerId && !f.signed);
+    if (!fa) return;
+
+    // Create player and add to playerMap
+    const newPlayer = {
+      id:           fa.playerId,
+      name:         fa.name,
+      position:     fa.position,
+      overall:      fa.overall,
+      salary:       fa.salary,
+      age:          fa.age,
+      teamId:       this.state.userTeamId,
+      jerseyNumber: 10 + Math.floor(Math.random() * 80),
+      bats:         fa.bats,
+      throws:       fa.throws,
+      height:       fa.height,
+      weight:       fa.weight,
+      batting:      fa.batting,
+      pitching:     fa.pitching,
+    };
+    this.playerMap[newPlayer.id] = newPlayer;
+    fa.signed = true;
+
+    const tm = this.getTeamMeta(this.state.userTeamId);
+    this.state.news.unshift(`✍️ ${fa.name} (${fa.position}, OVR ${fa.overall}) signed with ${tm.name}!`);
+    SaveManager.save(this.state);
+    this.go('freeAgency', { message: `${fa.name} signed! Welcome to ${tm.name}.` });
+  },
+
+  // ── Popup Dismiss ─────────────────────────────────────────────────────────
+
+  _dismissPopup() {
+    if (this.state) {
+      this.state.pendingInjuryPopups = [];
+      this.state.pendingReturnPopups = [];
+      SaveManager.save(this.state);
+    }
+    this.go('teamHub');
+  },
+
+  // ── Logo helper ───────────────────────────────────────────────────────────
+
+  teamLogoUrl(teamId) {
+    return `assets/logos/${teamId}.png`;
   },
 };
 

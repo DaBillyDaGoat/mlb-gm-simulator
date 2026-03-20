@@ -4,6 +4,11 @@
  */
 'use strict';
 
+// Helper: inline team logo img tag with fallback
+function logoImg(teamId, cls = 'team-logo-sm') {
+  return `<img src="assets/logos/${teamId}.png" alt="${teamId}" class="${cls}" onerror="this.style.display='none'">`;
+}
+
 const Screens = {
 
   // ── Main Menu ─────────────────────────────────────────────────────────────
@@ -122,6 +127,7 @@ const Screens = {
             <div class="next-game-card" style="--opp-primary:${opp.primary}">
               <div class="ng-label">${isHome ? 'HOME' : 'AWAY'} · Day ${g.day}</div>
               <div class="ng-matchup">
+                ${logoImg(oppId, 'team-logo-sm')}
                 <span class="ng-team">vs. <strong>${opp.name}</strong></span>
                 <span class="ng-record">${oppRec.wins}–${oppRec.losses}</span>
               </div>
@@ -167,11 +173,23 @@ const Screens = {
 
     const seasonPct = Math.round(app.seasonProgress() * 100);
 
+    // Injury / return popups
+    const injPopup = (state.pendingInjuryPopups?.length > 0)
+      ? Comps.injuryPopup(state.pendingInjuryPopups) : '';
+    const retPopup = (!injPopup && state.pendingReturnPopups?.length > 0)
+      ? Comps.returnPopup(state.pendingReturnPopups) : '';
+
     return `
+      ${injPopup || retPopup}
       <div class="screen hub-screen">
         <div class="hub-header" style="--team-primary:${tm.primary};--team-secondary:${tm.secondary}">
-          <div class="hub-teamname">${tm.city} <strong>${tm.name}</strong></div>
-          <div class="hub-record">${rec.wins}–${rec.losses} <span class="hub-pct">.${String(Math.round(pct * 10)).padStart(3,'0')}</span></div>
+          <div class="hub-top-row">
+            ${logoImg(state.userTeamId, 'team-logo-hub')}
+            <div>
+              <div class="hub-teamname">${tm.city} <strong>${tm.name}</strong></div>
+              <div class="hub-record">${rec.wins}–${rec.losses} <span class="hub-pct">.${String(Math.round(pct * 10)).padStart(3,'0')}</span></div>
+            </div>
+          </div>
           <div class="hub-streak">${streakStr(rec.streak)}</div>
           <div class="hub-day">Day ${day} · ${seasonPct}% Complete</div>
         </div>
@@ -305,6 +323,10 @@ const Screens = {
             ${injCount > 0 ? `<button class="filter-tab ${filter==='il'?'active':''}" onclick="App.go('roster',{filter:'il'})">IL (${injCount})</button>` : ''}
           </div>
         </div>
+        <div class="roster-mgmt-links">
+          <button class="roster-mgmt-link" onclick="App.go('lineup')">📋 Batting Lineup</button>
+          <button class="roster-mgmt-link" onclick="App.go('rotation')">⚾ Rotation &amp; Bullpen</button>
+        </div>
         <div class="player-list">${rowsHTML || '<div class="empty-state">No players found</div>'}</div>
         ${Comps.bottomNav('roster')}
       </div>`;
@@ -349,6 +371,7 @@ const Screens = {
               return `
                 <div class="st-row ${isUser ? 'user-team' : ''} ${i === 0 ? 'leader' : ''}">
                   <span class="st-team" style="--tc:${tm.primary}">
+                    ${logoImg(t.teamId, 'team-logo-xs')}
                     <span class="st-abbr">${t.teamId}</span>
                     <span class="st-name">${t.name}</span>
                   </span>
@@ -370,6 +393,7 @@ const Screens = {
           <div class="tab-bar">
             <button class="tab ${tab==='AL'?'active':''}" onclick="App.go('standings',{tab:'AL'})">AL</button>
             <button class="tab ${tab==='NL'?'active':''}" onclick="App.go('standings',{tab:'NL'})">NL</button>
+            <button class="tab" onclick="App.go('schedule')" style="margin-left:auto">Schedule ›</button>
           </div>
         </div>
         <div class="standings-content">${tableHTML}</div>
@@ -475,6 +499,21 @@ const Screens = {
           <h1>Box Score</h1>
         </div>
 
+        <div class="box-matchup-header">
+          <div class="box-team-side">
+            ${logoImg(result.awayTeamId, 'team-logo-md')}
+            <span style="color:${away.primary};font-weight:700">${away.id}</span>
+          </div>
+          <div class="box-vs-score">
+            <span class="${!homeWon ? 'box-winner-score' : ''}">${result.awayScore}</span>
+            <span class="box-vs-sep">—</span>
+            <span class="${homeWon ? 'box-winner-score' : ''}">${result.homeScore}</span>
+          </div>
+          <div class="box-team-side box-team-side-right">
+            <span style="color:${home.primary};font-weight:700">${home.id}</span>
+            ${logoImg(result.homeTeamId, 'team-logo-md')}
+          </div>
+        </div>
         <div class="linescore-card">
           <div class="ls-grid">
             <div class="ls-header"><span class="ls-team-label"></span>${inningHeaders}<span class="ls-total">R</span></div>
@@ -611,6 +650,7 @@ const Screens = {
                ${hasBox ? `data-action="viewBoxScore" data-game-id="${boxId}" style="cursor:pointer"` : ''}>
             <span class="sr-day">D${g.day}</span>
             <span class="sr-ha">${isHome ? 'vs' : '@'}</span>
+            ${logoImg(oppId, 'team-logo-xs')}
             <span class="sr-opp">${opp.name}</span>
             <span class="sr-score">${myScore}–${oppScore}</span>
             <span class="sr-result">${won ? 'W' : 'L'}</span>
@@ -620,6 +660,7 @@ const Screens = {
           <div class="schedule-row upcoming">
             <span class="sr-day">D${g.day}</span>
             <span class="sr-ha">${isHome ? 'vs' : '@'}</span>
+            ${logoImg(oppId, 'team-logo-xs')}
             <span class="sr-opp">${opp.name}</span>
             <span class="sr-score">—</span>
             <span class="sr-result sr-upcoming">•</span>
@@ -631,6 +672,9 @@ const Screens = {
       <div class="screen schedule-screen">
         <div class="screen-header" style="--team-primary:${tm.primary}">
           <h1>${tm.name} Schedule</h1>
+          <div class="tab-bar" style="margin-top:8px">
+            <button class="tab" onclick="App.go('standings')">‹ Standings</button>
+          </div>
         </div>
         <div class="schedule-list">${rows || '<div class="empty-state">No games scheduled</div>'}</div>
         ${Comps.bottomNav('schedule')}
@@ -702,9 +746,14 @@ const Screens = {
       <div class="screen player-card-screen">
         <div class="pc-header" style="--team-primary:${tm.primary};--team-secondary:${tm.secondary}">
           <button class="back-btn" onclick="App.go('roster')">‹ Back</button>
-          <div class="pc-num">#${player.jerseyNumber}</div>
-          <div class="pc-name">${player.name}</div>
-          <div class="pc-info">${player.position} · ${tm.name}</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+            ${logoImg(player.teamId, 'team-logo-md')}
+            <div>
+              <div class="pc-num">#${player.jerseyNumber}</div>
+              <div class="pc-name">${player.name}</div>
+              <div class="pc-info">${player.position} · ${tm.name}</div>
+            </div>
+          </div>
           <div class="pc-ovr">OVR ${player.overall}</div>
         </div>
 
@@ -960,6 +1009,479 @@ const Screens = {
           ${actionBlock || '<div class="empty-state">Offseason not yet started. Complete the playoffs first.</div>'}
         </div>
         ${Comps.bottomNav('teamHub')}
+      </div>`;
+  },
+
+  // ── Batting Lineup Management ──────────────────────────────────────────────
+
+  lineup(app, params = {}) {
+    const { state } = app;
+    const tm = app.getTeamMeta(state.userTeamId);
+    const lineup = app.getLineup(state.userTeamId);
+    const injuries = state.injuries || {};
+    const seasonStats = state.seasonStats;
+    const selected = App.lineupSelect;
+
+    const rows = lineup.map((pid, i) => {
+      const p = App.playerMap[pid];
+      if (!p) return '';
+      const inj = injuries[pid];
+      const batSt = seasonStats.batting[pid];
+      let statStr = batSt && batSt.ab > 0
+        ? `${calcAVG(batSt)} · ${batSt.hr}HR · ${batSt.rbi}RBI`
+        : `OVR ${p.overall}`;
+      const isSelected = selected === i;
+
+      return `
+        <button class="lineup-slot ${isSelected ? 'selected' : ''} ${inj ? 'on-il' : ''}"
+                data-action="lineupTap" data-slot="${i}">
+          <span class="ls-order">${i + 1}</span>
+          <span class="ls-pos">${p.position}</span>
+          <span class="ls-name">${p.name}${inj ? ' 🏥' : ''}</span>
+          <span class="ls-stat">${statStr}</span>
+        </button>`;
+    }).join('');
+
+    const instructions = selected !== null
+      ? `Tap another player to swap with #${selected + 1} · <strong>Tap same player to cancel</strong>`
+      : 'Tap a player to select · Tap another to swap positions';
+
+    return `
+      <div class="screen lineup-screen">
+        <div class="screen-header" style="--team-primary:${tm.primary}">
+          <h1>${tm.name} Lineup</h1>
+          <div class="filter-tabs">
+            <button class="filter-tab" onclick="App.go('roster')">‹ Roster</button>
+            <button class="filter-tab active">Lineup</button>
+            <button class="filter-tab" onclick="App.go('rotation')">Rotation</button>
+          </div>
+        </div>
+        <div class="lineup-instructions">${instructions}</div>
+        <div class="lineup-list">${rows || '<div class="empty-state">No position players found</div>'}</div>
+        ${Comps.bottomNav('lineup')}
+      </div>`;
+  },
+
+  // ── Pitching Rotation & Bullpen Management ─────────────────────────────────
+
+  rotation(app, params = {}) {
+    const { state } = app;
+    const tm = app.getTeamMeta(state.userTeamId);
+    const rotation = app.getRotation(state.userTeamId);
+    const bullpen = app.getTeamPlayers(state.userTeamId).filter(p => p.position === 'RP');
+    const roles = state.bullpenRoles?.[state.userTeamId] || {};
+    const injuries = state.injuries || {};
+    const seasonStats = state.seasonStats;
+    const selected = App.rotSelect;
+
+    const rotRows = rotation.map((pid, i) => {
+      const p = App.playerMap[pid];
+      if (!p) return '';
+      const inj = injuries[pid];
+      const pitSt = seasonStats.pitching[pid];
+      const statStr = pitSt && pitSt.ip > 0
+        ? `${pitSt.w}-${pitSt.l} ERA ${calcERA(pitSt)}`
+        : `OVR ${p.overall}`;
+      const isSelected = selected === i;
+
+      return `
+        <button class="lineup-slot ${isSelected ? 'selected' : ''} ${inj ? 'on-il' : ''}"
+                data-action="rotationTap" data-slot="${i}">
+          <span class="ls-order">${i + 1}</span>
+          <span class="ls-pos">SP</span>
+          <span class="ls-name">${p.name}${inj ? ' 🏥' : ''}</span>
+          <span class="ls-stat">${statStr}</span>
+        </button>`;
+    }).join('');
+
+    const bullpenRows = bullpen.map(p => {
+      const inj = injuries[p.id];
+      const role = roles[p.id] || 'middle';
+      const pitSt = seasonStats.pitching[p.id];
+      const statStr = pitSt && pitSt.ip > 0 ? `${pitSt.sv || 0}SV ${calcERA(pitSt)} ERA` : `OVR ${p.overall}`;
+      return `
+        <div class="bullpen-role-row ${inj ? 'on-il' : ''}">
+          <div class="brr-name">${p.name}${inj ? ' 🏥' : ''}<br><small style="color:var(--text3)">${statStr}</small></div>
+          <button class="role-btn ${role==='closer'?'active-closer':''}"
+                  data-action="setBullpenRole" data-player-id="${p.id}" data-role="closer">CL</button>
+          <button class="role-btn ${role==='setup'?'active-setup':''}"
+                  data-action="setBullpenRole" data-player-id="${p.id}" data-role="setup">SU</button>
+          <button class="role-btn ${role==='middle'?'active-middle':''}"
+                  data-action="setBullpenRole" data-player-id="${p.id}" data-role="middle">MR</button>
+        </div>`;
+    }).join('');
+
+    const instructions = selected !== null
+      ? `Tap another starter to swap with #${selected + 1}`
+      : 'Tap a starter to reorder the rotation';
+
+    return `
+      <div class="screen rotation-screen">
+        <div class="screen-header" style="--team-primary:${tm.primary}">
+          <h1>${tm.name} Pitching</h1>
+          <div class="filter-tabs">
+            <button class="filter-tab" onclick="App.go('roster')">‹ Roster</button>
+            <button class="filter-tab" onclick="App.go('lineup')">Lineup</button>
+            <button class="filter-tab active">Rotation</button>
+          </div>
+        </div>
+
+        <div class="rotation-section" style="margin-top:12px">
+          <div class="rotation-label">Starting Rotation</div>
+          <div class="lineup-instructions">${instructions}</div>
+          <div class="lineup-list" style="padding:0">${rotRows || '<div class="empty-state">No starting pitchers found</div>'}</div>
+        </div>
+
+        ${bullpen.length > 0 ? `
+          <div class="rotation-section">
+            <div class="rotation-label">Bullpen Roles</div>
+            ${bullpenRows}
+            <div style="font-size:11px;color:var(--text3);margin-top:6px;padding:0 2px">CL = Closer · SU = Setup · MR = Middle Relief</div>
+          </div>` : ''}
+
+        ${Comps.bottomNav('rotation')}
+      </div>`;
+  },
+
+  // ── Trade Center ───────────────────────────────────────────────────────────
+
+  tradeCenter(app, params = {}) {
+    const { state } = app;
+    if (!state) return `<div class="screen"><div class="empty-state">Start a game first.</div>${Comps.bottomNav('tradeCenter')}</div>`;
+
+    const draft = App.tradeDraft || { opponentId: null, myPlayers: [], theirPlayers: [] };
+    const tradeHistory = state.tradeHistory || [];
+
+    // ── Result card (after proposing)
+    if (params.result) {
+      const r = params.result;
+      return `
+        <div class="screen trade-center-screen">
+          <div class="screen-header"><h1>Trade Center</h1></div>
+          <div class="trade-result-card ${r.accepted ? 'accepted' : 'rejected'}">
+            <div class="tr-icon">${r.accepted ? '✅' : '❌'}</div>
+            <div class="tr-title">${r.accepted ? 'Trade Accepted!' : 'Trade Rejected'}</div>
+            <div class="tr-detail">${r.message}</div>
+          </div>
+          <div style="padding:0 12px;display:flex;flex-direction:column;gap:8px;margin-top:4px">
+            <button class="btn btn-primary" data-action="clearTrade">Make Another Trade</button>
+            <button class="btn btn-secondary" data-action="nav" data-screen="roster">View Roster</button>
+          </div>
+          ${Comps.bottomNav('tradeCenter')}
+        </div>`;
+    }
+
+    // ── Step 1: pick opponent
+    if (!draft.opponentId) {
+      const aiTeams = TEAMS_META.filter(t => t.id !== state.userTeamId);
+      const teamCards = aiTeams.map(t => {
+        const rec = app.getTeamRecord(t.id);
+        return `
+          <button class="trade-team-card" data-action="selectTradeOpponent" data-team-id="${t.id}"
+                  style="border-left:3px solid ${t.primary}">
+            ${logoImg(t.id, 'team-logo-sm')}
+            <div class="ttc-abbr" style="color:${t.primary}">${t.id}</div>
+            <div class="ttc-record">${rec.wins}–${rec.losses}</div>
+          </button>`;
+      }).join('');
+
+      const historyHTML = tradeHistory.length > 0 ? `
+        <div class="trade-history-section">
+          <div class="section-label" style="padding:0 0 4px">Trade History</div>
+          ${tradeHistory.slice(-5).reverse().map(tr => `
+            <div class="trade-history-item">🔄 ${tr.summary}</div>`).join('')}
+        </div>` : '';
+
+      // AI-initiated trade offers
+      const pendingOffers = state.pendingTradeOffers || [];
+      const offersHTML = pendingOffers.length > 0 ? `
+        <div class="trade-history-section">
+          <div class="section-label" style="padding:0 0 6px;color:var(--gold)">📨 Incoming Trade Offers (${pendingOffers.length})</div>
+          ${pendingOffers.map(offer => {
+            const aiMeta = app.getTeamMeta(offer.fromTeamId);
+            const theyGive = offer.theyOffer.map(id => {
+              const p = App.playerMap[id];
+              return p ? `${p.name} (${p.position}, OVR ${p.overall})` : id;
+            }).join(', ');
+            const theyWant = offer.theyWant.map(id => {
+              const p = App.playerMap[id];
+              return p ? `${p.name} (${p.position}, OVR ${p.overall})` : id;
+            }).join(', ');
+            return `
+              <div class="trade-history-item" style="border:1px solid rgba(244,200,66,0.3);background:rgba(244,200,66,0.05);border-radius:8px;padding:12px;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  ${logoImg(offer.fromTeamId, 'team-logo-sm')}
+                  <strong style="color:${aiMeta.primary}">${aiMeta.name}</strong> proposes:
+                </div>
+                <div style="font-size:12px;line-height:1.6">
+                  They offer: <strong>${theyGive}</strong><br>
+                  They want: <strong>${theyWant}</strong>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:10px">
+                  <button class="btn btn-primary btn-sm" style="flex:1" data-action="acceptTradeOffer" data-offer-id="${offer.id}">✓ Accept</button>
+                  <button class="btn btn-danger btn-sm" style="flex:1" data-action="rejectTradeOffer" data-offer-id="${offer.id}">✗ Decline</button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>` : '';
+
+      return `
+        <div class="screen trade-center-screen">
+          <div class="screen-header">
+            <h1>Trade Center</h1>
+            <p style="font-size:13px;color:var(--text2);margin-top:4px">Select a team to propose a trade</p>
+          </div>
+          ${offersHTML}
+          ${historyHTML}
+          <div class="trade-team-grid">${teamCards}</div>
+          ${Comps.bottomNav('tradeCenter')}
+        </div>`;
+    }
+
+    // ── Step 2: build trade
+    const oppMeta = app.getTeamMeta(draft.opponentId);
+    const mySelected  = new Set(draft.myPlayers);
+    const oppSelected = new Set(draft.theirPlayers);
+
+    const myRoster = app.getTeamPlayers(state.userTeamId)
+      .filter(p => !['SP','RP'].includes(p.position) || p.position === 'SP')
+      .sort((a,b) => b.overall - a.overall)
+      .slice(0, 15);
+
+    const oppRoster = app.getTeamPlayers(draft.opponentId)
+      .sort((a,b) => b.overall - a.overall)
+      .slice(0, 15);
+
+    const playerRow = (p, action, selected) => `
+      <button class="trade-player-row ${selected ? 'selected' : ''}"
+              data-action="${action}" data-player-id="${p.id}">
+        <div class="tpr-check">${selected ? '✓' : ''}</div>
+        <span class="tpr-pos">${p.position}</span>
+        <span class="tpr-name">${p.name}</span>
+        <span class="tpr-ovr">OVR ${p.overall}</span>
+      </button>`;
+
+    const myOVR   = draft.myPlayers.reduce((s, id) => s + (App.playerMap[id]?.overall || 0), 0);
+    const oppOVR  = draft.theirPlayers.reduce((s, id) => s + (App.playerMap[id]?.overall || 0), 0);
+    const diff    = myOVR - oppOVR;
+    const fairMsg = myOVR === 0 && oppOVR === 0 ? 'Select players on both sides'
+                  : diff >= 0 ? '✓ Fair or better for both sides'
+                  : Math.abs(diff) <= 8 ? '~ Close — AI may accept'
+                  : '✗ You need to offer more value';
+    const fairCls = diff >= 0 ? 'fair' : Math.abs(diff) <= 8 ? 'neutral' : 'unfair';
+
+    return `
+      <div class="screen trade-center-screen">
+        <div class="screen-header">
+          <h1>Trade Proposal</h1>
+          <button class="btn btn-secondary btn-sm" data-action="clearTrade" style="margin-top:8px;width:auto;display:inline-block">← Change Team</button>
+        </div>
+
+        <div class="trade-builder">
+          <div class="trade-side-header">Your Offer <span style="color:var(--text3)">(tap to select)</span></div>
+          ${myRoster.map(p => playerRow(p, 'toggleMyTradePick', mySelected.has(p.id))).join('')}
+
+          <div class="trade-side-header" style="margin-top:8px">Requesting from <span style="color:${oppMeta.primary}">${oppMeta.name}</span></div>
+          ${oppRoster.map(p => playerRow(p, 'toggleTheirTradePick', oppSelected.has(p.id))).join('')}
+
+          <div class="trade-fairness-bar">
+            <div class="tfb-label">Trade Value</div>
+            <div class="tfb-values">
+              <span class="tfb-you">You: ${myOVR}</span>
+              <span class="tfb-vs">OVR</span>
+              <span class="tfb-them">Them: ${oppOVR}</span>
+            </div>
+            <div class="tfb-status ${fairCls}">${fairMsg}</div>
+          </div>
+
+          ${mySelected.size > 0 && oppSelected.size > 0
+            ? `<button class="btn btn-primary" data-action="proposeTrade" style="margin-bottom:12px">Propose Trade</button>`
+            : `<button class="btn btn-secondary" disabled style="margin-bottom:12px;opacity:0.4">Select players on both sides</button>`}
+        </div>
+
+        ${Comps.bottomNav('tradeCenter')}
+      </div>`;
+  },
+
+  // ── Front Office ───────────────────────────────────────────────────────────
+
+  frontOffice(app, params = {}) {
+    const { state } = app;
+    if (!state) return `<div class="screen"><div class="empty-state">Start a game first.</div>${Comps.bottomNav('frontOffice')}</div>`;
+
+    const tm       = app.getTeamMeta(state.userTeamId);
+    const rec      = app.getUserRecord();
+    const payroll  = app.getTeamPayroll(state.userTeamId);
+    const budget   = tm.budget || 150000;
+    const roster   = app.getTeamPlayers(state.userTeamId);
+    const phase    = state.season.phase;
+    const offPhase = state.offseasonPhase;
+
+    const payrollPct = Math.min(100, Math.round(payroll / (budget * 1.1) * 100));
+    const overBudget = payroll > budget * 1.1;
+
+    const payrollBar = `
+      <div class="payroll-bar-wrap" style="margin:0">
+        <span class="payroll-label">Payroll: $${(payroll/1000).toFixed(1)}M / $${(budget/1000).toFixed(0)}M ${overBudget ? '⚠️ Over budget' : ''}</span>
+        <div class="payroll-bar-bg" style="height:8px;border-radius:4px">
+          <div class="payroll-bar ${overBudget ? 'over-budget' : ''}" style="width:${payrollPct}%"></div>
+        </div>
+      </div>`;
+
+    const statsGrid = `
+      <div class="fo-stats-grid">
+        <div class="fo-stat-card">
+          <div class="fo-stat-val">${rec.wins}–${rec.losses}</div>
+          <div class="fo-stat-label">Record</div>
+        </div>
+        <div class="fo-stat-card">
+          <div class="fo-stat-val">${roster.length}</div>
+          <div class="fo-stat-label">Roster Size</div>
+        </div>
+        <div class="fo-stat-card">
+          <div class="fo-stat-val">$${(payroll/1000).toFixed(1)}M</div>
+          <div class="fo-stat-label">Payroll</div>
+        </div>
+        <div class="fo-stat-card">
+          <div class="fo-stat-val">${app.getTeamInjuries(state.userTeamId).length}</div>
+          <div class="fo-stat-label">On IL</div>
+        </div>
+      </div>`;
+
+    // Roster management links (always shown during regular season or earlier)
+    const rosterMgmt = `
+      <div class="fo-section">
+        <div class="section-label">Roster Management</div>
+        <button class="fo-nav-btn" onclick="App.go('lineup')">
+          <span>📋 Batting Lineup</span><span class="fo-btn-arrow">›</span>
+        </button>
+        <button class="fo-nav-btn" onclick="App.go('rotation')">
+          <span>⚾ Pitching Rotation & Bullpen</span><span class="fo-btn-arrow">›</span>
+        </button>
+      </div>`;
+
+    // Offseason actions
+    let offseasonBlock = '';
+    if (phase === 'offseason' || phase === 'playoffs') {
+      const faCount = (state.freeAgentPool || []).filter(f => !f.signed).length;
+      offseasonBlock = `
+        <div class="fo-section">
+          <div class="section-label">Offseason</div>
+          ${state.playoffs ? `
+            <button class="fo-nav-btn" data-action="viewPlayoffs">
+              <span>🏆 View Playoffs Bracket</span><span class="fo-btn-arrow">›</span>
+            </button>` : ''}
+          ${state.awards ? `
+            <button class="fo-nav-btn" data-action="viewAwards">
+              <span>🥇 Season Awards</span><span class="fo-btn-arrow">›</span>
+            </button>` : ''}
+          ${offPhase === 'free_agency' ? `
+            <div class="fo-action-card">
+              <h3>Free Agency${faCount > 0 ? ` (${faCount} available)` : ''}</h3>
+              <p>Browse and sign available free agents before AI teams claim them.</p>
+              <button class="btn btn-primary" data-action="showFreeAgency">Browse Free Agents</button>
+              <button class="btn btn-secondary" style="margin-top:8px" data-action="runFreeAgency">Skip — Run AI Free Agency</button>
+            </div>` : ''}
+          ${offPhase === 'draft' ? `
+            <div class="fo-action-card">
+              <h3>MLB Draft</h3>
+              <p>5 rounds, 30 teams. Worst records pick first. Your picks shown in detail.</p>
+              <button class="btn btn-primary" data-action="runDraft">Run MLB Draft</button>
+            </div>` : ''}
+          ${offPhase === 'complete' ? `
+            <div class="fo-action-card">
+              <h3>New Season Ready</h3>
+              <p>Free agency and draft are complete. Ready to start the ${(state.season.year || 2026) + 1} season!</p>
+              <button class="btn btn-primary" data-action="startNewSeason">Start ${(state.season.year || 2026) + 1} Season</button>
+            </div>` : ''}
+          ${offPhase === 'free_agency' ? '' : (state.faNews?.length > 0 ? `
+            <div class="section-label" style="margin-top:12px">Recent FA Signings</div>
+            ${state.faNews.slice(0, 5).map(n => `<div class="trade-history-item">${n}</div>`).join('')}` : '')}
+        </div>`;
+    }
+
+    const msg = params.message
+      ? `<div class="sim-message win" style="margin:8px 12px 0">${params.message}</div>` : '';
+
+    return `
+      <div class="screen front-office-screen">
+        <div class="screen-header" style="--team-primary:${tm.primary}">
+          <h1>Front Office</h1>
+          <p style="font-size:13px;color:var(--text2);margin-top:2px">${tm.full}</p>
+        </div>
+        ${msg}
+        ${statsGrid}
+        <div style="padding:0 12px 8px">${payrollBar}</div>
+        ${rosterMgmt}
+        ${offseasonBlock}
+        ${Comps.bottomNav('frontOffice')}
+      </div>`;
+  },
+
+  // ── Free Agency Browser ────────────────────────────────────────────────────
+
+  freeAgency(app, params = {}) {
+    const { state } = app;
+    if (!state) return `<div class="screen"><div class="empty-state">Start a game first.</div>${Comps.bottomNav('frontOffice')}</div>`;
+
+    // Generate pool if not yet done
+    if (!state.freeAgentPool || state.freeAgentPool.length === 0) {
+      App._generateFAPool();
+    }
+
+    const pool = state.freeAgentPool || [];
+    const posFilter = params.posFilter || 'all';
+
+    const filtered = posFilter === 'sp'  ? pool.filter(f => f.position === 'SP')
+                   : posFilter === 'rp'  ? pool.filter(f => f.position === 'RP')
+                   : posFilter === 'pos' ? pool.filter(f => !['SP','RP'].includes(f.position))
+                   : pool;
+
+    const signedCount = pool.filter(f => f.signed).length;
+
+    const cards = filtered.map(fa => {
+      const signed = fa.signed;
+      const ovrCls = fa.overall >= 85 ? 'ovr-elite' : fa.overall >= 75 ? 'ovr-star' : fa.overall >= 65 ? 'ovr-good' : 'ovr-avg';
+      return `
+        <div class="fa-player-card ${signed ? 'signed' : ''}">
+          <div class="fa-pc-left">
+            <span class="fa-pc-pos">${fa.position}</span>
+            <div class="fa-pc-name">${fa.name} <span class="ovr-badge ${ovrCls}" style="font-size:11px">${fa.overall}</span></div>
+            <div class="fa-pc-meta">Age ${fa.age} · ${fa.bats}/${fa.throws} · ${fa.height}</div>
+          </div>
+          <div class="fa-pc-right">
+            <div class="fa-pc-salary">$${(fa.salary/1000).toFixed(1)}M</div>
+            <div class="fa-pc-salary-label">/ year</div>
+            ${signed
+              ? `<div class="fa-signed-label">Signed ✓</div>`
+              : `<button class="fa-sign-btn" data-action="signFreeAgent" data-player-id="${fa.playerId}">Sign</button>`}
+          </div>
+        </div>`;
+    }).join('');
+
+    const msg = params.message
+      ? `<div class="fa-signed-msg">✍️ ${params.message}</div>` : '';
+
+    return `
+      <div class="screen free-agency-screen">
+        <div class="screen-header">
+          <h1>Free Agent Market</h1>
+          <div class="filter-tabs" style="margin-top:10px">
+            <button class="filter-tab ${posFilter==='all'?'active':''}"  onclick="App.go('freeAgency',{posFilter:'all'})">All</button>
+            <button class="filter-tab ${posFilter==='sp'?'active':''}"   onclick="App.go('freeAgency',{posFilter:'sp'})">SP</button>
+            <button class="filter-tab ${posFilter==='rp'?'active':''}"   onclick="App.go('freeAgency',{posFilter:'rp'})">RP</button>
+            <button class="filter-tab ${posFilter==='pos'?'active':''}"  onclick="App.go('freeAgency',{posFilter:'pos'})">Pos</button>
+          </div>
+        </div>
+        ${msg}
+        <div style="padding:8px 12px 0;font-size:12px;color:var(--text3)">${pool.length - signedCount} available · ${signedCount} signed</div>
+        <div class="fa-pool-list" style="margin-top:8px">
+          ${cards || `<div class="fa-empty">No free agents available at this position.</div>`}
+        </div>
+        <div style="padding:12px;margin-top:4px">
+          <button class="btn btn-secondary" data-action="runFreeAgency">Run AI Free Agency →</button>
+        </div>
+        ${Comps.bottomNav('frontOffice')}
       </div>`;
   },
 
