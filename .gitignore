@@ -1,0 +1,19 @@
+# Build tools and dev dependencies
+node_modules/
+tools/
+
+# Trash / temp
+_TRASH/
+*.tmp
+*.log
+
+# Spreadsheets / non-game files
+*.xlsx
+*.xls
+
+# Claude workspace files
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
