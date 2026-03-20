@@ -249,7 +249,7 @@ function initSeasonStats() {
 }
 
 function emptyBattingStats() {
-  return { g:0, ab:0, h:0, '2b':0, '3b':0, hr:0, rbi:0, r:0, bb:0, k:0, hbp:0, sac:0 };
+  return { g:0, ab:0, h:0, '2b':0, '3b':0, hr:0, rbi:0, r:0, bb:0, k:0, hbp:0, sac:0, sb:0, cs:0 };
 }
 
 function emptyPitchingStats() {
@@ -278,6 +278,8 @@ function applyGameStats(seasonStats, gameResult) {
     s.k   += gs.k   || 0;
     s.hbp += gs.hbp || 0;
     s.sac += gs.sac || 0;
+    s.sb  += gs.sb  || 0;
+    s.cs  += gs.cs  || 0;
   }
 
   // Pitching
@@ -288,6 +290,7 @@ function applyGameStats(seasonStats, gameResult) {
     if (gs.gamesStarted) s.gs++;
     s.w   += gs.wins   || 0;
     s.l   += gs.losses || 0;
+    s.sv  += gs.sv     || 0;
     s.ip  += gs.ip  || 0;
     s.h   += gs.h   || 0;
     s.r   += gs.r   || 0;
@@ -332,7 +335,8 @@ function getLeaders(seasonStats, playerMap, n = 10) {
       rbi: s.rbi,
       r:   s.r,
       h:   s.h,
-      sb:  s.sb || 0,
+      sb:  s.sb  || 0,
+      cs:  s.cs  || 0,
       ab:  s.ab,
       stats: s,
     }));
@@ -346,19 +350,74 @@ function getLeaders(seasonStats, playerMap, n = 10) {
       era:  parseFloat(calcERA(s)) || 99,
       w:    s.w,
       k:    s.k,
+      sv:   s.sv || 0,
       ip:   s.ip,
       whip: parseFloat(calcWHIP(s)),
       stats: s,
     }));
 
+  // For saves leaders include any pitcher with at least 1 save (relievers may have < 30 IP)
+  const relievers = Object.entries(seasonStats.pitching)
+    .filter(([pid, s]) => (s.sv || 0) > 0)
+    .map(([pid, s]) => ({
+      pid,
+      name: playerMap[pid]?.name || pid,
+      teamId: playerMap[pid]?.teamId || '?',
+      sv:   s.sv || 0,
+      era:  parseFloat(calcERA(s)) || 99,
+      ip:   s.ip,
+      stats: s,
+    }));
+
   return {
-    avg:  hitters.sort((a,b) => b.avg - a.avg).slice(0, n),
-    hr:   hitters.sort((a,b) => b.hr - a.hr).slice(0, n),
-    rbi:  hitters.sort((a,b) => b.rbi - a.rbi).slice(0, n),
-    era:  pitchers.sort((a,b) => a.era - b.era).slice(0, n),
-    wins: pitchers.sort((a,b) => b.w - a.w).slice(0, n),
-    k:    pitchers.sort((a,b) => b.k - a.k).slice(0, n),
+    avg:  [...hitters].sort((a,b) => b.avg - a.avg).slice(0, n),
+    hr:   [...hitters].sort((a,b) => b.hr - a.hr).slice(0, n),
+    rbi:  [...hitters].sort((a,b) => b.rbi - a.rbi).slice(0, n),
+    r:    [...hitters].sort((a,b) => b.r - a.r).slice(0, n),
+    sb:   [...hitters].sort((a,b) => b.sb - a.sb).slice(0, n),
+    era:  [...pitchers].sort((a,b) => a.era - b.era).slice(0, n),
+    wins: [...pitchers].sort((a,b) => b.w - a.w).slice(0, n),
+    k:    [...pitchers].sort((a,b) => b.k - a.k).slice(0, n),
+    sv:   [...relievers].sort((a,b) => b.sv - a.sv).slice(0, n),
   };
+}
+
+// ── Player Streaks (Hot/Cold) ─────────────────────────────────────────────────
+
+/**
+ * Update hot/cold streak state for all players who appeared in today's games.
+ * streaks: { pid: { recentHits, recentAB, mod } }
+ * gameStatsList: array of gameResult.gameStats objects from today's games.
+ *
+ * Uses a rolling ~20 AB window. Hot: avg > .370 → +0.03 mod, Cold: avg < .155 → -0.03 mod.
+ */
+function updatePlayerStreaks(streaks, gameStatsList) {
+  const WINDOW = 20;
+
+  for (const gameStats of gameStatsList) {
+    for (const [pid, gs] of Object.entries(gameStats.batting)) {
+      if (!streaks[pid]) streaks[pid] = { recentHits: 0, recentAB: 0, mod: 0 };
+      const s = streaks[pid];
+
+      s.recentHits += gs.h || 0;
+      s.recentAB   += gs.ab || 0;
+
+      // Decay rolling window: trim back towards WINDOW ABs
+      if (s.recentAB > WINDOW) {
+        const ratio = WINDOW / s.recentAB;
+        s.recentHits = Math.round(s.recentHits * ratio);
+        s.recentAB   = WINDOW;
+      }
+
+      // Compute modifier
+      if (s.recentAB >= 10) {
+        const avg = s.recentHits / s.recentAB;
+        s.mod = avg > 0.370 ? 0.03 : avg < 0.155 ? -0.03 : 0;
+      } else {
+        s.mod = 0;
+      }
+    }
+  }
 }
 
 window.TEAMS_META          = TEAMS_META;
@@ -377,3 +436,4 @@ window.calcWHIP = calcWHIP;
 window.fmtIP    = fmtIP;
 window.streakStr = streakStr;
 window.getLeaders = getLeaders;
+window.updatePlayerStreaks = updatePlayerStreaks;

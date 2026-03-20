@@ -9,10 +9,12 @@ const BATTER_POSITIONS  = new Set(['C','1B','2B','3B','SS','LF','CF','RF','DH','
 
 // ── Lineup / Rotation helpers ────────────────────────────────────────────────
 
-/** Build a batting lineup (9 players) for a team vs. a pitcher's hand */
-function buildLineup(teamId, playerMap, vsHand) {
+/** Build a batting lineup (9 players) for a team vs. a pitcher's hand.
+ *  excludeIds: Set of player IDs to skip (injured players on IL). */
+function buildLineup(teamId, playerMap, vsHand, excludeIds) {
+  const excluded = excludeIds instanceof Set ? excludeIds : new Set(excludeIds || []);
   const posPlayers = Object.values(playerMap)
-    .filter(p => p.teamId === teamId && BATTER_POSITIONS.has(p.position));
+    .filter(p => p.teamId === teamId && BATTER_POSITIONS.has(p.position) && !excluded.has(p.id));
 
   // Score each batter for lineup construction
   function score(p) {
@@ -28,14 +30,18 @@ function buildLineup(teamId, playerMap, vsHand) {
 /** Get starting pitcher for this game (cycle through rotation) */
 function getStartingPitcher(teamId, playerMap, gamesBySeason, seasonStats) {
   // Cap each SP at 34 GS to prevent thin rotations (2-3 SPs) from getting 54+ starts.
-  // When a pitcher has hit their GS limit, skip them; use next in rotation.
+  // Also cap at 200 IP per season — once a starter hits that threshold, rest them.
   const GS_CAP = 34;
+  const IP_CAP = 200;
 
   const starters = Object.values(playerMap)
     .filter(p =>
       p.teamId === teamId &&
       p.position === 'SP' &&
-      (!seasonStats || (seasonStats.pitching[p.id]?.gs || 0) < GS_CAP)
+      (!seasonStats || (
+        (seasonStats.pitching[p.id]?.gs || 0) < GS_CAP &&
+        (seasonStats.pitching[p.id]?.ip || 0) < IP_CAP
+      ))
     )
     .sort((a, b) => b.overall - a.overall);
 
@@ -45,21 +51,49 @@ function getStartingPitcher(teamId, playerMap, gamesBySeason, seasonStats) {
       p.teamId === teamId &&
       p.position === 'TWP' &&
       p.pitching.velocity > 0 &&
-      (!seasonStats || (seasonStats.pitching[p.id]?.gs || 0) < GS_CAP)
+      (!seasonStats || (
+        (seasonStats.pitching[p.id]?.gs || 0) < GS_CAP &&
+        (seasonStats.pitching[p.id]?.ip || 0) < IP_CAP
+      ))
     );
 
   const rotation = [...starters, ...twp];
   if (rotation.length === 0) {
-    // All SPs at GS cap: fall back to whoever has fewest starts (least overloaded)
-    const allSPs = Object.values(playerMap)
-      .filter(p => p.teamId === teamId && (p.position === 'SP' || p.position === 'TWP') && p.pitching?.velocity > 0)
-      .sort((a, b) => (seasonStats?.pitching[a.id]?.gs || 0) - (seasonStats?.pitching[b.id]?.gs || 0));
-    if (allSPs.length > 0) return allSPs[0];
-    // Last resort: best available pitcher
-    const rps = Object.values(playerMap)
-      .filter(p => p.teamId === teamId && PITCHER_POSITIONS.has(p.position))
+    // All SPs at GS or IP cap. First: try any SP still under IP_CAP (even if over GS_CAP).
+    // This gives thin rotations extra starts as long as they haven't hit 200 IP.
+    const underIPCap = Object.values(playerMap)
+      .filter(p =>
+        p.teamId === teamId &&
+        (p.position === 'SP' || p.position === 'TWP') &&
+        p.pitching?.velocity > 0 &&
+        (!seasonStats || (seasonStats.pitching[p.id]?.ip || 0) < IP_CAP)
+      )
+      .sort((a, b) => (seasonStats?.pitching[a.id]?.ip || 0) - (seasonStats?.pitching[b.id]?.ip || 0));
+    if (underIPCap.length > 0) return underIPCap[0];
+
+    // All SPs are at IP_CAP too. Use the best available RP as an opener (1-2 innings).
+    // The SP will then cover innings 2-4 as long reliever via the bullpen.
+    const opener = Object.values(playerMap)
+      .filter(p =>
+        p.teamId === teamId && p.position === 'RP' && p.pitching?.velocity > 0 &&
+        (!seasonStats || (seasonStats.pitching[p.id]?.g || 0) < 70)
+      )
       .sort((a, b) => b.overall - a.overall);
-    return rps[0] || null;
+    if (opener.length > 0) return opener[0];
+
+    // True last resort: pick the pitcher with fewest IP regardless of position.
+    // If that pitcher is already over IP_CAP, override to TWP so calcThreshold
+    // limits them to ~2 innings instead of a full 8-inning start. This prevents
+    // thin-roster teams (PIT/LAA) from pushing pitchers to 380 IP.
+    const any = Object.values(playerMap)
+      .filter(p => p.teamId === teamId && PITCHER_POSITIONS.has(p.position) && p.pitching?.velocity > 0)
+      .sort((a, b) => (seasonStats?.pitching[a.id]?.ip || 0) - (seasonStats?.pitching[b.id]?.ip || 0));
+    if (!any[0]) return null;
+    const lastResortIP = seasonStats ? (seasonStats.pitching[any[0].id]?.ip || 0) : 0;
+    if (lastResortIP >= IP_CAP) {
+      return { ...any[0], position: 'TWP' }; // 2-inning opener cap via calcThreshold
+    }
+    return any[0];
   }
   const idx = (gamesBySeason || 0) % Math.min(rotation.length, 5);
   return rotation[idx];
@@ -91,9 +125,12 @@ function getBullpenPitcher(teamId, playerMap, usedPitcherIds, seasonStats, rng) 
         p.position === 'SP' &&
         !usedPitcherIds.has(p.id) &&
         p.pitching?.velocity > 0 &&
-        // Cap: don't use a SP as emergency reliever if they already have 40+ appearances
+        // Cap: don't use a SP as emergency reliever if they have 40+ appearances or 200+ IP
         // (prevents bench SPs from accumulating excessive IP as emergency long relievers)
-        (seasonStats ? (seasonStats.pitching[p.id]?.g || 0) < 40 : true)
+        (seasonStats ? (
+          (seasonStats.pitching[p.id]?.g || 0) < 40 &&
+          (seasonStats.pitching[p.id]?.ip || 0) < 200
+        ) : true)
       )
       .sort((a, b) => a.overall - b.overall); // worst first (preserve top starters)
     if (bench.length === 0) return null;
@@ -179,7 +216,7 @@ function simHalfInning(opts) {
   // Track pitching stats for this half-inning
   function getPitStats(pid) {
     if (!gameStats.pitching[pid]) {
-      gameStats.pitching[pid] = { ip: 0, h: 0, r: 0, er: 0, bb: 0, k: 0, hr: 0, pitches: 0, gamesStarted: 0 };
+      gameStats.pitching[pid] = { ip: 0, h: 0, r: 0, er: 0, bb: 0, k: 0, hr: 0, pitches: 0, gamesStarted: 0, sv: 0 };
     }
     return gameStats.pitching[pid];
   }
@@ -219,19 +256,52 @@ function simHalfInning(opts) {
       }
     }
 
+    // ── Stolen base attempt ──────────────────────────────────────────────────
+    // Check before each at-bat: runner on 1st with 2nd open and < 2 outs
+    if (bases[0] && !bases[1] && outs < 2) {
+      const runner = playerMap[bases[0]];
+      if (runner) {
+        const sbResult = checkStolenBase(runner, rng);
+        if (sbResult) {
+          const runnerStats = getBatStats(runner.id);
+          if (sbResult.success) {
+            bases[1] = bases[0];
+            bases[0] = null;
+            runnerStats.sb = (runnerStats.sb || 0) + 1;
+            playLog.push(`${runner.name} steals 2nd`);
+          } else {
+            bases[0] = null;
+            outs++;
+            runnerStats.cs = (runnerStats.cs || 0) + 1;
+            playLog.push(`${runner.name} caught stealing`);
+            if (outs >= 3) break;
+          }
+        }
+      }
+    }
+
     const batterId = lineup[lineupIdx % 9];
     lineupIdx++;
     const batter = playerMap[batterId];
     if (!batter) { continue; }
 
     const li = runs === 0 ? 1.0 : Math.max(0.5, 3.0 / (Math.abs(runs) + 1));
-    const result = resolveAtBat(batter, currentPitcher, rng, pitchCount, li);
+    // Player modifier: hot/cold streak + season fatigue (passed via opts.playerMods)
+    const playerMod = (opts.playerMods && opts.playerMods[batterId]) || 0;
+    const result = resolveAtBat(batter, currentPitcher, rng, pitchCount, li, playerMod);
     pitchCount += result.pitches || 3;
 
     const adv = advanceBases(bases, result, batterId, outs, rng);
     bases = adv.newBases;
     runs += adv.runsScored;
     outs += adv.outsAdded;
+
+    // Fix 5: credit individual runs scored to each player who crossed home plate
+    if (adv.scoredRunnerIds) {
+      for (const runnerId of adv.scoredRunnerIds) {
+        getBatStats(runnerId).r++;
+      }
+    }
 
     // ── Update box score stats ───────────────────────────────────────────────
     const batStats = getBatStats(batterId);
@@ -346,13 +416,37 @@ function simHalfInning(opts) {
  * @param {object} playerMap - id → player object
  * @param {object} teamGameCounts - teamId → number of games played (for rotation)
  * @param {string} gameId
+ * @param {object} seasonStats - accumulated season stats (for pitcher IP caps)
+ * @param {object} gameOptions - { injuries:{}, streaks:{} } optional modifiers
  * @returns {object} GameResult
  */
-function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonStats) {
+function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonStats, gameOptions) {
   const seed = makeSeed(gameId || `${homeId}_${awayId}_${Date.now()}`);
   const rng = new SeededRNG(seed);
 
-  // Build lineups
+  // Build injured-player exclusion sets from gameOptions
+  const opts = gameOptions || {};
+  const injuries = opts.injuries || {};
+  const homeExcluded = getTeamInjuredIds ? getTeamInjuredIds(homeId, injuries, playerMap) : new Set();
+  const awayExcluded = getTeamInjuredIds ? getTeamInjuredIds(awayId, injuries, playerMap) : new Set();
+
+  // Compute per-player contact modifiers from hot/cold streaks + season fatigue
+  const playerMods = {};
+  const streaks = opts.streaks || {};
+  for (const [pid, streak] of Object.entries(streaks)) {
+    if (streak.mod && streak.mod !== 0) {
+      playerMods[pid] = (playerMods[pid] || 0) + streak.mod;
+    }
+  }
+  // Season fatigue: players with 130+ games get -0.02 contact; 120+ get -0.01
+  if (seasonStats?.batting) {
+    for (const [pid, s] of Object.entries(seasonStats.batting)) {
+      if (s.g >= 130) playerMods[pid] = (playerMods[pid] || 0) - 0.02;
+      else if (s.g >= 120) playerMods[pid] = (playerMods[pid] || 0) - 0.01;
+    }
+  }
+
+  // Build lineups (excluding injured players)
   const homeStarter = getStartingPitcher(homeId, playerMap, teamGameCounts[homeId] || 0, seasonStats);
   const awayStarter = getStartingPitcher(awayId, playerMap, teamGameCounts[awayId] || 0, seasonStats);
 
@@ -363,8 +457,8 @@ function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonS
     return buildFallbackResult(homeId, awayId, homeScore, awayScore, gameId);
   }
 
-  const homeLineup = buildLineup(homeId, playerMap, awayStarter.throws);
-  const awayLineup = buildLineup(awayId, playerMap, homeStarter.throws);
+  const homeLineup = buildLineup(homeId, playerMap, awayStarter.throws, homeExcluded);
+  const awayLineup = buildLineup(awayId, playerMap, homeStarter.throws, awayExcluded);
 
   if (homeLineup.length < 9 || awayLineup.length < 9) {
     const homeScore = rng.int(2, 7);
@@ -387,9 +481,9 @@ function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonS
 
   const gameStats = { batting: {}, pitching: {} };
   // Mark starters
-  if (!gameStats.pitching[homeStarter.id]) gameStats.pitching[homeStarter.id] = { ip:0,h:0,r:0,er:0,bb:0,k:0,hr:0,pitches:0,gamesStarted:1 };
+  if (!gameStats.pitching[homeStarter.id]) gameStats.pitching[homeStarter.id] = { ip:0,h:0,r:0,er:0,bb:0,k:0,hr:0,pitches:0,gamesStarted:1,sv:0 };
   else gameStats.pitching[homeStarter.id].gamesStarted = 1;
-  if (!gameStats.pitching[awayStarter.id]) gameStats.pitching[awayStarter.id] = { ip:0,h:0,r:0,er:0,bb:0,k:0,hr:0,pitches:0,gamesStarted:1 };
+  if (!gameStats.pitching[awayStarter.id]) gameStats.pitching[awayStarter.id] = { ip:0,h:0,r:0,er:0,bb:0,k:0,hr:0,pitches:0,gamesStarted:1,sv:0 };
   else gameStats.pitching[awayStarter.id].gamesStarted = 1;
 
   const inningScores = []; // [{top, bot}]
@@ -441,6 +535,7 @@ function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonS
       inning,
       isBottom:        false,
       gameStats,
+      playerMods,
       startPitchCount: homePitchCount,     // ← carry pitch count across innings
       usedPitchers:    homeUsedPitchers,
     });
@@ -483,6 +578,7 @@ function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonS
       inning,
       isBottom:        true,
       gameStats,
+      playerMods,
       startPitchCount: awayPitchCount,     // ← carry pitch count across innings
       usedPitchers:    awayUsedPitchers,
     });
@@ -547,6 +643,29 @@ function simulateGame(homeId, awayId, playerMap, teamGameCounts, gameId, seasonS
 
   if (wpId && gameStats.pitching[wpId]) gameStats.pitching[wpId].wins = 1;
   if (lpId && gameStats.pitching[lpId]) gameStats.pitching[lpId].losses = 1;
+
+  // Fix 4: Save tracking
+  // A save goes to the final pitcher of the winning team if:
+  //   1. They are not the winning pitcher (WP)
+  //   2. The winning margin is 1–3 runs (save situation)
+  const margin = Math.abs(homeScore - awayScore);
+  if (margin <= 3) {
+    const winningUsedPitchers = homeWin ? homeUsedPitchers : awayUsedPitchers;
+    // Sets preserve insertion order; last element = last pitcher who pitched
+    let lastPitcherId = null;
+    for (const pid of winningUsedPitchers) { lastPitcherId = pid; }
+    if (lastPitcherId && lastPitcherId !== wpId) {
+      if (!gameStats.pitching[lastPitcherId]) {
+        gameStats.pitching[lastPitcherId] = { ip:0,h:0,r:0,er:0,bb:0,k:0,hr:0,pitches:0,gamesStarted:0,sv:0 };
+      }
+      const lastStats = gameStats.pitching[lastPitcherId];
+      // Only credit save to a relief pitcher — starters who entered the game
+      // with gamesStarted=1 are not eligible for saves.
+      if (!lastStats.gamesStarted) {
+        lastStats.sv = 1;
+      }
+    }
+  }
 
   // Mark batters who scored
   // (RBIs tracked during advanceBases; runs tracked here)

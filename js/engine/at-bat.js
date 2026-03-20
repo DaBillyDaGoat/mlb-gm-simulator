@@ -32,13 +32,17 @@ function estimatePitchesForResult(resultType) {
  * Core at-bat resolver.
  * Returns an outcome object:
  *   { type: 'BB'|'HBP'|'K'|'GO'|'FO'|'LO'|'1B'|'2B'|'3B'|'HR' }
+ *
+ * playerMod: additive modifier to contactFactor (e.g. +0.03 hot streak, -0.03 cold,
+ *            -0.02 fatigue). Defaults to 0.
  */
-function resolveAtBat(batter, pitcher, rng, pitchCount = 0, leverageIndex = 1.0) {
+function resolveAtBat(batter, pitcher, rng, pitchCount = 0, leverageIndex = 1.0, playerMod = 0) {
   const isVsRHP = pitcher.throws !== 'L';
   const contact = isVsRHP ? batter.batting.contactR : batter.batting.contactL;
   const power   = isVsRHP ? batter.batting.powerR   : batter.batting.powerL;
 
-  const contactFactor = Math.min(1.0, contact / 125);
+  // Apply hot/cold streak and fatigue modifier to contact (clamped 0.05–1.0)
+  const contactFactor = Math.min(1.0, Math.max(0.05, (contact / 125) + playerMod));
   const powerFactor   = Math.min(1.0, power   / 125);
   const speedFactor   = (batter.batting.speed || 50) / 99;
 
@@ -78,17 +82,18 @@ function resolveAtBat(batter, pitcher, rng, pitchCount = 0, leverageIndex = 1.0)
   // ── Ball in play ──────────────────────────────────────────────────────────
 
   // Home run probability (independent of BABIP)
-  // Elite power bonus: steeply rewards 100+ power so a 125-power Judge hits 50-60 HRs
-  // while average hitters (power < 100) are completely unaffected.
-  const eliteBonus = power > 100 ? (power - 100) * 0.026 : 0;
-  const hrProb = powerFactor * (1 + eliteBonus) * 0.065 * (1.25 - velFactor * 0.35) * clutchMod;
+  // Elite power bonus: steeply rewards 100+ power so a 125-power Judge hits 50+ HRs
+  // while average hitters (power < 100) are much less affected.
+  // Raised elite factor (0.070) to preserve top sluggers when base rate is lowered.
+  const eliteBonus = power > 100 ? (power - 100) * 0.025 : 0;
+  const hrProb = powerFactor * (1 + eliteBonus) * 0.070 * (1.25 - velFactor * 0.35) * clutchMod;
   if (rng.chance(hrProb)) {
     return { type: 'HR', pitches: 2 };
   }
 
-  // BABIP: base raised slightly to push ERA leaders into 2.50-3.00 range;
-  // pitcher suppression modestly reduced to prevent elite pitchers from being too dominant
-  const babip = Math.min(0.45, Math.max(0.15, 0.322 + contactFactor * 0.09 - velFactor * 0.015 - brkFactor * 0.010));
+  // BABIP: base at 0.288 targets league AVG ~.257 while keeping elite contact hitters realistic.
+  // Pitcher suppression factors unchanged — elite pitchers still hold their edge.
+  const babip = Math.min(0.45, Math.max(0.15, 0.288 + contactFactor * 0.09 - velFactor * 0.015 - brkFactor * 0.010));
 
   if (rng.chance(babip)) {
     // Determine hit type
@@ -118,8 +123,9 @@ function advanceBases(bases, result, batterId, outs, rng) {
   let runsScored = 0;
   let outsAdded  = 0;
   let rbiCount   = 0;
+  const scoredRunnerIds = []; // Fix 5: track which player IDs cross home plate
 
-  const scoreRunner = () => { runsScored++; rbiCount++; };
+  const scoreRunner = (runnerId) => { runsScored++; rbiCount++; if (runnerId) scoredRunnerIds.push(runnerId); };
 
   switch (result.type) {
     case 'BB':
@@ -127,7 +133,7 @@ function advanceBases(bases, result, batterId, outs, rng) {
       // Force advance all runners
       if (newBases[0]) {
         if (newBases[1]) {
-          if (newBases[2]) { scoreRunner(); }
+          if (newBases[2]) { scoreRunner(newBases[2]); }
           newBases[2] = newBases[1];
         }
         newBases[1] = newBases[0];
@@ -138,10 +144,10 @@ function advanceBases(bases, result, batterId, outs, rng) {
 
     case '1B': {
       // Runner on 3rd scores
-      if (newBases[2]) { scoreRunner(); newBases[2] = null; }
+      if (newBases[2]) { scoreRunner(newBases[2]); newBases[2] = null; }
       // Runner on 2nd → scores ~55% of the time on a single (real MLB rate)
       if (newBases[1]) {
-        if (rng.chance(0.55)) { scoreRunner(); newBases[2] = null; }
+        if (rng.chance(0.55)) { scoreRunner(newBases[1]); }
         else newBases[2] = newBases[1];
         newBases[1] = null;
       }
@@ -152,10 +158,10 @@ function advanceBases(bases, result, batterId, outs, rng) {
     }
 
     case '2B': {
-      if (newBases[2]) { scoreRunner(); newBases[2] = null; }
-      if (newBases[1]) { scoreRunner(); newBases[1] = null; }
+      if (newBases[2]) { scoreRunner(newBases[2]); newBases[2] = null; }
+      if (newBases[1]) { scoreRunner(newBases[1]); newBases[1] = null; }
       if (newBases[0]) {
-        if (rng.chance(0.50)) { scoreRunner(); }
+        if (rng.chance(0.50)) { scoreRunner(newBases[0]); }
         else newBases[2] = newBases[0];
         newBases[0] = null;
       }
@@ -164,15 +170,16 @@ function advanceBases(bases, result, batterId, outs, rng) {
     }
 
     case '3B': {
-      for (let i = 0; i < 3; i++) { if (newBases[i]) { scoreRunner(); newBases[i] = null; } }
+      for (let i = 0; i < 3; i++) { if (newBases[i]) { scoreRunner(newBases[i]); newBases[i] = null; } }
       newBases[2] = batterId;
       break;
     }
 
     case 'HR': {
-      for (let i = 0; i < 3; i++) { if (newBases[i]) { scoreRunner(); newBases[i] = null; } }
-      runsScored++; // batter scores — no RBI for themselves counted separately
+      for (let i = 0; i < 3; i++) { if (newBases[i]) { scoreRunner(newBases[i]); newBases[i] = null; } }
+      runsScored++; // batter scores
       rbiCount++;   // HR always counts as at least 1 RBI
+      scoredRunnerIds.push(batterId); // Fix 5: batter also scores on HR
       break;
     }
 
@@ -191,6 +198,7 @@ function advanceBases(bases, result, batterId, outs, rng) {
       // Runner on 3rd might score on ground out if < 2 outs (not DP)
       if (outsAdded === 1 && outs < 2 && newBases[2]) {
         runsScored++; rbiCount++;
+        scoredRunnerIds.push(newBases[2]);
         newBases[2] = null;
       }
       break;
@@ -201,6 +209,7 @@ function advanceBases(bases, result, batterId, outs, rng) {
       // Sac fly — runner on 3rd scores if < 2 outs
       if (outs < 2 && newBases[2]) {
         runsScored++; rbiCount++;
+        scoredRunnerIds.push(newBases[2]);
         newBases[2] = null;
       }
       break;
@@ -212,10 +221,33 @@ function advanceBases(bases, result, batterId, outs, rng) {
     }
   }
 
-  return { newBases, runsScored, outsAdded, rbiCount };
+  return { newBases, runsScored, outsAdded, rbiCount, scoredRunnerIds };
+}
+
+/**
+ * Check if a baserunner attempts (and succeeds/fails) a stolen base.
+ * Called before each at-bat when runner is on 1st and 2nd is open.
+ * Returns null (no attempt) or { attempted: true, success: bool }
+ */
+function checkStolenBase(runner, rng) {
+  if (!runner || !runner.batting) return null;
+  const speed = runner.batting.speed || 50;
+  const steal = runner.batting.steal || 50;
+
+  // Only players with enough speed bother to attempt
+  if (speed < 52) return null;
+
+  // Attempt probability: ~8% at speed 55, ~40% at speed 90
+  const attemptProb = Math.min(0.45, (speed - 45) / 120);
+  if (!rng.chance(attemptProb)) return null;
+
+  // Success probability: ~58% at steal 50, up to ~84% at steal 99
+  const successProb = Math.min(0.85, 0.50 + (steal - 40) / 180);
+  return { attempted: true, success: rng.chance(successProb) };
 }
 
 window.resolveAtBat    = resolveAtBat;
 window.advanceBases    = advanceBases;
 window.getFatigueMultiplier = getFatigueMultiplier;
 window.estimatePitchesForResult = estimatePitchesForResult;
+window.checkStolenBase = checkStolenBase;
