@@ -128,6 +128,93 @@ const Comps = {
         </div>
       </div>`;
   },
+
+  // ── Manager Decision Card ────────────────────────────────────
+
+  decisionCard(decision) {
+    if (!decision) return '';
+    return `
+      <div class="decision-overlay" id="decisionOverlay">
+        <div class="decision-card">
+          <div class="decision-badge">⚡ Manager Decision</div>
+          <div class="decision-situation">${decision.situation}</div>
+          <div class="decision-prompt">${decision.prompt}</div>
+          <div class="decision-options">
+            ${decision.options.map(opt => `
+              <button class="decision-option"
+                      data-action="makeDecision"
+                      data-key="${opt.key}">
+                <span class="decision-option-label">${opt.label}</span>
+                <span class="decision-option-desc">${opt.desc}</span>
+              </button>`).join('')}
+          </div>
+          <button class="decision-skip" data-action="skipDecision">Skip ›</button>
+        </div>
+      </div>`;
+  },
+
+  // ── Achievement Unlock Popup ─────────────────────────────────
+
+  achievementPopup(achievements) {
+    if (!achievements || achievements.length === 0) return '';
+    const ach = achievements[0]; // show first one
+    return `
+      <div class="popup-overlay" id="achievePopup">
+        <div class="popup-card achievement-unlock" style="background:linear-gradient(135deg,#2a1f00,#1a1600);border:1.5px solid var(--gold)">
+          <div class="popup-header">
+            <span class="popup-icon">🏅</span>
+            <span class="popup-title" style="color:var(--gold)">Achievement Unlocked!</span>
+            <button class="popup-close" data-action="dismissAchievement">✕</button>
+          </div>
+          <div class="popup-body">
+            <div class="achievement-popup">
+              <div class="achievement-popup-icon">${ach.icon}</div>
+              <div class="achievement-popup-body">
+                <div class="achievement-popup-label">New Achievement</div>
+                <div class="achievement-popup-name">${ach.name}</div>
+                <div class="achievement-popup-desc">${ach.desc}</div>
+              </div>
+            </div>
+            ${achievements.length > 1 ? `<div style="font-size:12px;color:var(--text2);margin-top:8px;text-align:center">+${achievements.length - 1} more unlocked</div>` : ''}
+          </div>
+          <button class="btn popup-action-btn" style="background:var(--gold);color:#000;font-weight:800" data-action="dismissAchievement">Awesome! 🎉</button>
+        </div>
+      </div>`;
+  },
+
+  // ── Milestone Toast ──────────────────────────────────────────
+
+  milestoneToast(msg) {
+    return `<div class="milestone-popup" id="milestoneToast">🌟 ${msg}</div>`;
+  },
+
+  // ── HOF Induction Popup ──────────────────────────────────────
+
+  hofPopup(members) {
+    if (!members || members.length === 0) return '';
+    return `
+      <div class="popup-overlay" id="hofPopup">
+        <div class="popup-card" style="background:linear-gradient(135deg,#1a1500,#0f0f00);border:1.5px solid var(--gold)">
+          <div class="popup-header">
+            <span class="popup-icon">🏛️</span>
+            <span class="popup-title" style="color:var(--gold)">Hall of Fame</span>
+            <button class="popup-close" data-action="dismissHOF">✕</button>
+          </div>
+          <div class="popup-body">
+            ${members.map(m => `
+              <div class="popup-item">
+                <span class="popup-icon" style="font-size:20px">⭐</span>
+                <div class="popup-item-info">
+                  <div class="popup-item-name">${m.name}</div>
+                  <div class="popup-item-detail">${m.position} · ${m.reason}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+          <div style="font-size:12px;color:var(--text2);text-align:center;margin:8px 0">Inducted into the Baseball Hall of Fame</div>
+          <button class="btn popup-action-btn" style="background:var(--gold);color:#000;font-weight:800" data-action="dismissHOF">Congratulations!</button>
+        </div>
+      </div>`;
+  },
 };
 
 window.Comps = Comps;

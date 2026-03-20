@@ -56,7 +56,7 @@ const App = {
     if (!this.state.allStarResult)     this.state.allStarResult = null;
     if (!this.state.playoffs)          this.state.playoffs = null;
     if (!this.state.awards)            this.state.awards = null;
-    if (!this.state.offseasonPhase)    this.state.offseasonPhase = null; // 'free_agency' | 'draft' | 'complete'
+    if (!this.state.offseasonPhase)    this.state.offseasonPhase = null;
     if (!this.state.draftNews)         this.state.draftNews = [];
     if (!this.state.faNews)            this.state.faNews = [];
     // v1.2 fields
@@ -68,6 +68,19 @@ const App = {
     if (!this.state.pendingInjuryPopups)  this.state.pendingInjuryPopups = [];
     if (!this.state.pendingReturnPopups)  this.state.pendingReturnPopups = [];
     if (!this.state.pendingTradeOffers)   this.state.pendingTradeOffers = [];
+    // v2.0 fields
+    if (!this.state.careerStats)          this.state.careerStats = {};
+    if (!this.state.hofMembers)           this.state.hofMembers = [];
+    if (!this.state.waiverPool)           this.state.waiverPool = [];
+    if (!this.state.achievements)         this.state.achievements = {};
+    if (!this.state.triggeredMilestones)  this.state.triggeredMilestones = {};
+    if (!this.state.pendingAchievements)  this.state.pendingAchievements = [];
+    if (!this.state.pendingMilestones)    this.state.pendingMilestones = [];
+    if (!this.state.pendingHOF)           this.state.pendingHOF = [];
+    if (!this.state.gameRecaps)           this.state.gameRecaps = {};
+    if (!this.state.seasonRecaps)         this.state.seasonRecaps = [];
+    if (!this.state.rosterExpanded)       this.state.rosterExpanded = false;
+    if (this.state.pendingDecision === undefined) this.state.pendingDecision = null;
   },
 
   /** Restore prospects added via draft to playerMap (they're stored in state, not PLAYERS_DATA) */
@@ -105,6 +118,10 @@ const App = {
       case 'tradeCenter':  app.innerHTML = Screens.tradeCenter(this, params); break;
       case 'frontOffice':  app.innerHTML = Screens.frontOffice(this, params); break;
       case 'freeAgency':   app.innerHTML = Screens.freeAgency(this, params); break;
+      case 'waiverWire':   app.innerHTML = Screens.waiverWire(this, params); break;
+      case 'trophyCase':   app.innerHTML = Screens.trophyCase(this, params); break;
+      case 'hofTracker':   app.innerHTML = Screens.hofTracker(this, params); break;
+      case 'seasonRecap':  app.innerHTML = Screens.seasonRecap(this, params); break;
       default:             app.innerHTML = Screens.teamHub(this, params);
     }
 
@@ -153,7 +170,18 @@ const App = {
       case 'acceptTradeOffer': this._acceptTradeOffer(data.offerId); break;
       case 'rejectTradeOffer': this._rejectTradeOffer(data.offerId); break;
       // Popups
-      case 'dismissPopup':    this._dismissPopup(); break;
+      case 'dismissPopup':       this._dismissPopup(); break;
+      case 'dismissAchievement': this._dismissAchievement(); break;
+      case 'dismissHOF':         this._dismissHOF(); break;
+      // Manager decisions
+      case 'makeDecision':   this._makeDecision(data.key); break;
+      case 'skipDecision':   this._skipDecision(); break;
+      // Waiver wire
+      case 'claimWaiver':    this._claimWaiver(data.playerId); break;
+      // Navigation new screens
+      case 'viewSeasonRecap': this.go('seasonRecap'); break;
+      // Sound
+      case 'toggleSound':    this._toggleSound(); break;
     }
   },
 
@@ -214,11 +242,29 @@ const App = {
       pendingInjuryPopups:  [],
       pendingReturnPopups:  [],
       pendingTradeOffers:   [],
+      // v2.0
+      careerStats:          {},
+      hofMembers:           [],
+      waiverPool:           [],
+      achievements:         {},
+      triggeredMilestones:  {},
+      pendingAchievements:  [],
+      pendingMilestones:    [],
+      pendingHOF:           [],
+      gameRecaps:           {},
+      seasonRecaps:         [],
+      rosterExpanded:       false,
+      pendingDecision:      null,
     };
 
     // Init team records
     for (const t of allTeams) {
       this.state.teamRecords[t.id] = { wins: 0, losses: 0, runsFor: 0, runsAgainst: 0, streak: { type: 'W', count: 0 } };
+    }
+
+    // Generate waiver pool
+    if (typeof generateWaiverPool === 'function') {
+      this.state.waiverPool = generateWaiverPool(this.playerMap, teamId, 40);
     }
 
     SaveManager.save(this.state);
@@ -230,6 +276,9 @@ const App = {
   simDay() {
     if (!this.state) return;
 
+    // Unlock audio on first user interaction
+    if (typeof Sound !== 'undefined') Sound.unlock();
+
     // If in playoffs phase, sim the playoffs
     if (this.state.season.phase === 'playoffs') {
       this.startPlayoffs();
@@ -238,6 +287,32 @@ const App = {
 
     const { currentDay } = this.state.season;
     const nextDay = currentDay + 1;
+
+    // ── Manager Decision Gate ──────────────────────────────────────────────
+    // If we already showed a decision for this day, clear it and continue.
+    // If no decision yet and user has a game, maybe create one.
+    if (this.state.pendingDecision) {
+      // Decision was shown but user tapped Sim Day again = skip it
+      this.state.pendingDecision = null;
+    } else {
+      const userGame = this.state.schedule.find(g =>
+        g.day === nextDay && g.status === 'scheduled' &&
+        (g.homeTeamId === this.state.userTeamId || g.awayTeamId === this.state.userTeamId)
+      );
+      if (userGame && this.state.decisionUsedForDay !== nextDay && Math.random() < 0.45) {
+        const oppId = userGame.homeTeamId === this.state.userTeamId
+          ? userGame.awayTeamId : userGame.homeTeamId;
+        if (typeof createManagerDecision === 'function') {
+          this.state.pendingDecision = createManagerDecision(
+            this.state.userTeamId, oppId, this.playerMap, TEAMS_META
+          );
+          this.state.decisionUsedForDay = nextDay;
+          SaveManager.save(this.state);
+          this.go('teamHub', { showDecision: true });
+          return;
+        }
+      }
+    }
 
     // Find games scheduled for today
     const todayGames = this.state.schedule.filter(
@@ -253,6 +328,23 @@ const App = {
       return;
     }
 
+    // ── Rainout Check ─────────────────────────────────────────────────────
+    const rainedOut = this._checkRainout(todayGames, nextDay);
+    if (rainedOut) {
+      this.state.season.currentDay = nextDay;
+      this._advanceDayEffects(nextDay, []);
+      this._checkSeasonEnd();
+      SaveManager.save(this.state);
+      this.go('teamHub', { simMessage: `☔ Day ${nextDay}: Rain delay! Game rescheduled as doubleheader.` });
+      return;
+    }
+
+    // ── September Roster Expansion ─────────────────────────────────────────
+    if (nextDay >= 130 && !this.state.rosterExpanded) {
+      this.state.rosterExpanded = true;
+      this.state.news.unshift('📋 September — Rosters expanded to 40 players!');
+    }
+
     // Build game counts for rotation
     const teamGameCounts = {};
     for (const t of this.state.teams) {
@@ -260,9 +352,21 @@ const App = {
                               (this.state.teamRecords[t.id]?.losses || 0);
     }
 
+    // Apply decision modifier (if user made a decision choice)
+    const streaks = { ...(this.state.playerStreaks || {}) };
+    const decMod = this.state.decisionMod || 0;
+    if (decMod !== 0) {
+      for (const p of Object.values(this.playerMap)) {
+        if (p.teamId === this.state.userTeamId) {
+          streaks[p.id] = { ...(streaks[p.id] || {}), mod: ((streaks[p.id]?.mod) || 0) + decMod };
+        }
+      }
+      this.state.decisionMod = 0;
+    }
+
     const gameOptions = {
       injuries: this.state.injuries || {},
-      streaks:  this.state.playerStreaks || {},
+      streaks,
     };
 
     let userGameResult = null;
@@ -294,6 +398,25 @@ const App = {
           game.awayTeamId === this.state.userTeamId) {
         this.state.boxScores.push(result);
         userGameResult = result;
+
+        // ── Game Recap ───────────────────────────────────────────────────
+        if (typeof generateGameRecap === 'function') {
+          const homeMeta = TEAMS_META.find(t => t.id === result.homeTeamId) || {};
+          const awayMeta = TEAMS_META.find(t => t.id === result.awayTeamId) || {};
+          const userMeta = TEAMS_META.find(t => t.id === this.state.userTeamId);
+          const oppId = result.homeTeamId === this.state.userTeamId ? result.awayTeamId : result.homeTeamId;
+          const oppMeta = TEAMS_META.find(t => t.id === oppId);
+          const isDivisional = userMeta && oppMeta &&
+            userMeta.league === oppMeta.league && userMeta.division === oppMeta.division;
+          const recap = generateGameRecap(result, this.playerMap, homeMeta, awayMeta, isDivisional);
+          if (!this.state.gameRecaps) this.state.gameRecaps = {};
+          this.state.gameRecaps[result.gameId] = recap;
+          // Keep only last 30 recaps
+          const recapIds = Object.keys(this.state.gameRecaps);
+          if (recapIds.length > 30) {
+            delete this.state.gameRecaps[recapIds[0]];
+          }
+        }
       }
 
       this._generateGameNews(result);
@@ -306,6 +429,28 @@ const App = {
     this._advanceDayEffects(nextDay, todayGameStats);
     this._checkSeasonEnd();
 
+    // ── Milestone check ──────────────────────────────────────────────────
+    if (typeof checkMilestones === 'function') {
+      const newMilestones = checkMilestones(this.state, this.playerMap);
+      if (newMilestones.length > 0) {
+        if (!this.state.pendingMilestones) this.state.pendingMilestones = [];
+        this.state.pendingMilestones.push(...newMilestones);
+        for (const ms of newMilestones) {
+          this.state.news.unshift(`🌟 MILESTONE: ${ms.msg}`);
+        }
+        if (typeof Sound !== 'undefined') Sound.milestone();
+      }
+    }
+
+    // ── Achievement check ─────────────────────────────────────────────────
+    const newAchs = typeof checkAchievements === 'function'
+      ? checkAchievements(this.state, this.playerMap) : [];
+    if (newAchs.length > 0) {
+      if (!this.state.pendingAchievements) this.state.pendingAchievements = [];
+      this.state.pendingAchievements.push(...newAchs);
+      if (typeof Sound !== 'undefined') Sound.achievement();
+    }
+
     // Trim box scores
     if (this.state.boxScores.length > 30) {
       this.state.boxScores = this.state.boxScores.slice(-30);
@@ -316,6 +461,14 @@ const App = {
     const msg = userGameResult
       ? this._gameResultMessage(userGameResult)
       : `Day ${nextDay}: ${todayGames.length} game${todayGames.length !== 1 ? 's' : ''} played.`;
+
+    // ── Sound on result ──────────────────────────────────────────────────
+    if (userGameResult && typeof Sound !== 'undefined') {
+      const isHome = userGameResult.homeTeamId === this.state.userTeamId;
+      const myScore  = isHome ? userGameResult.homeScore : userGameResult.awayScore;
+      const oppScore = isHome ? userGameResult.awayScore : userGameResult.homeScore;
+      if (myScore > oppScore) Sound.win(); else Sound.loss();
+    }
 
     this.go('teamHub', { simMessage: msg, lastGame: userGameResult?.gameId });
   },
@@ -459,6 +612,12 @@ const App = {
 
     // Trim news
     if (this.state.news.length > 50) this.state.news = this.state.news.slice(0, 50);
+
+    // Auto-dismiss milestone toasts after showing (1 per day)
+    if (this.state.pendingMilestones?.length > 0) {
+      // They were shown on previous frame — shift one off
+      this.state.pendingMilestones.shift();
+    }
   },
 
   _runAllStarGame() {
@@ -682,13 +841,66 @@ const App = {
     app.innerHTML = `<div class="loading-screen"><div class="loading-spinner"></div><p>Starting new season...</p></div>`;
 
     setTimeout(() => {
-      // Age up all players
+      const currentYear = this.state.season.year || 2026;
+      const newYear     = currentYear + 1;
+
+      // ── Career Stats Snapshot ──────────────────────────────────────────
+      if (typeof snapshotCareerStats === 'function') {
+        this.state.careerStats = snapshotCareerStats(
+          this.state.careerStats || {},
+          this.state.seasonStats,
+          currentYear
+        );
+      }
+
+      // ── Generate season recap before resetting stats ───────────────────
+      this._buildSeasonRecap(currentYear);
+
+      // ── Age up all players ─────────────────────────────────────────────
       for (const p of Object.values(this.playerMap)) {
         p.age = (p.age || 25) + 1;
       }
 
-      // Reset season state
-      const newYear = (this.state.season.year || 2026) + 1;
+      // ── Player Development ─────────────────────────────────────────────
+      const devNews = typeof applyPlayerDevelopment === 'function'
+        ? applyPlayerDevelopment(this.playerMap) : [];
+
+      // ── Retirements ────────────────────────────────────────────────────
+      const retiredIds = typeof checkRetirements === 'function'
+        ? checkRetirements(this.playerMap) : [];
+      const retiredNames = [];
+      for (const pid of retiredIds) {
+        const p = this.playerMap[pid];
+        if (!p) continue;
+        retiredNames.push(p.name);
+        p.isRetired = true;
+        // Remove from team roster (set to free agent limbo)
+        p.teamId = 'RETIRED';
+      }
+      if (retiredNames.length > 0) {
+        this.state.news.unshift(`👋 Retirements: ${retiredNames.slice(0, 5).join(', ')}`);
+      }
+
+      // ── HOF Inductions ─────────────────────────────────────────────────
+      if (retiredIds.length > 0 && typeof processHOFInductions === 'function') {
+        const inducted = processHOFInductions(
+          retiredIds,
+          this.state.careerStats,
+          this.playerMap,
+          this.state.hofMembers || []
+        );
+        if (inducted.length > 0) {
+          if (!this.state.hofMembers) this.state.hofMembers = [];
+          this.state.hofMembers.push(...inducted);
+          if (!this.state.pendingHOF) this.state.pendingHOF = [];
+          this.state.pendingHOF.push(...inducted);
+          for (const m of inducted) {
+            this.state.news.unshift(`🏛️ HALL OF FAME: ${m.name} inducted! (${m.reason})`);
+          }
+        }
+      }
+
+      // ── Reset season state ─────────────────────────────────────────────
       const newSchedule = generateSchedule(TEAMS_META);
 
       this.state.season = {
@@ -716,13 +928,35 @@ const App = {
       this.state.pendingTradeOffers   = [];
       this.state.tradeHistory         = [];
       this.state.saveDate             = new Date().toISOString();
+      this.state.rosterExpanded       = false;
+      this.state.pendingDecision      = null;
+      this.state.decisionMod          = 0;
+      this.state.triggeredMilestones  = {};
+      this.state.gameRecaps           = {};
 
-      // Reset team records
+      // ── Waiver wire pool for new season ────────────────────────────────
+      if (typeof generateWaiverPool === 'function') {
+        this.state.waiverPool = generateWaiverPool(
+          this.playerMap, this.state.userTeamId, 40
+        );
+      }
+
+      // ── Reset team records ─────────────────────────────────────────────
       for (const t of TEAMS_META) {
         this.state.teamRecords[t.id] = { wins: 0, losses: 0, runsFor: 0, runsAgainst: 0, streak: { type: 'W', count: 0 } };
       }
 
-      this.state.news = [`${newYear} season started! Managing the ${TEAMS_META.find(t => t.id === this.state.userTeamId)?.full}.`];
+      // Add dev news
+      for (const n of devNews.slice(0, 3)) this.state.news.unshift(n);
+      this.state.news.unshift(`⚾ ${newYear} season started! Managing the ${TEAMS_META.find(t => t.id === this.state.userTeamId)?.full}.`);
+
+      // ── Achievement check ───────────────────────────────────────────────
+      const newAchs = typeof checkAchievements === 'function'
+        ? checkAchievements(this.state, this.playerMap) : [];
+      if (newAchs.length > 0) {
+        if (!this.state.pendingAchievements) this.state.pendingAchievements = [];
+        this.state.pendingAchievements.push(...newAchs);
+      }
 
       SaveManager.save(this.state);
       this.go('teamHub', { simMessage: `Welcome to the ${newYear} season!` });
@@ -1098,12 +1332,261 @@ const App = {
     this.go('freeAgency', { message: `${fa.name} signed! Welcome to ${tm.name}.` });
   },
 
+  // ── Rainout ────────────────────────────────────────────────────────────────
+
+  _checkRainout(todayGames, day) {
+    // 3% chance of rainout per day with games
+    if (Math.random() >= 0.03) return false;
+
+    // Find the user team's game to rain out for extra drama
+    const userGame = todayGames.find(g =>
+      g.homeTeamId === this.state.userTeamId || g.awayTeamId === this.state.userTeamId
+    );
+    const targetGame = userGame || todayGames[0];
+    if (!targetGame) return false;
+
+    // Mark as rained out
+    targetGame.status = 'rained_out';
+
+    // Find a future date for doubleheader (look 3-10 days ahead)
+    const { homeTeamId, awayTeamId } = targetGame;
+    let rescheduleDay = null;
+
+    for (let d = day + 3; d <= day + 15; d++) {
+      const homebusy = this.state.schedule.some(g => g.day === d && (g.homeTeamId === homeTeamId || g.awayTeamId === homeTeamId));
+      const awayBusy = this.state.schedule.some(g => g.day === d && (g.homeTeamId === awayTeamId || g.awayTeamId === awayTeamId));
+      if (!homebusy && !awayBusy) {
+        rescheduleDay = d;
+        break;
+      }
+      // Check if there's already one game that day (allow doubleheader slot)
+      const existingGame = this.state.schedule.find(g =>
+        g.day === d &&
+        ((g.homeTeamId === homeTeamId && g.awayTeamId === awayTeamId) ||
+         (g.homeTeamId === awayTeamId && g.awayTeamId === homeTeamId))
+      );
+      if (existingGame && !homebusy && !awayBusy) {
+        rescheduleDay = d;
+        break;
+      }
+    }
+
+    if (rescheduleDay) {
+      // Find last gameId number
+      const lastNum = this.state.schedule.reduce((max, g) => {
+        const n = parseInt(g.gameId?.split('_')[1]) || 0;
+        return Math.max(max, n);
+      }, 0);
+      const newGameId = `${this.state.season.year}_${String(lastNum + 1).padStart(4, '0')}`;
+
+      this.state.schedule.push({
+        gameId:        newGameId,
+        day:           rescheduleDay,
+        week:          Math.ceil(rescheduleDay / 7),
+        homeTeamId,
+        awayTeamId,
+        status:        'scheduled',
+        result:        null,
+        isDoubleheader: true,
+      });
+
+      // Mark the original same-day game as DH too
+      const existing = this.state.schedule.find(g =>
+        g.day === rescheduleDay && g.status === 'scheduled' &&
+        ((g.homeTeamId === homeTeamId) || (g.awayTeamId === homeTeamId))
+      );
+      if (existing) existing.isDoubleheader = true;
+
+      this.state.news.unshift(
+        `☔ Rain delay! ${homeTeamId} vs ${awayTeamId} rescheduled as doubleheader on Day ${rescheduleDay}.`
+      );
+    }
+
+    return true;
+  },
+
+  // ── Manager Decision ───────────────────────────────────────────────────────
+
+  _makeDecision(choiceKey) {
+    if (!this.state.pendingDecision) return;
+    const decision = this.state.pendingDecision;
+    const chosen   = decision.options.find(o => o.key === choiceKey);
+    const mod      = chosen ? chosen.mod : 0;
+
+    this.state.decisionMod  = mod;
+    this.state.pendingDecision = null;
+
+    SaveManager.save(this.state);
+    this.simDay();
+  },
+
+  _skipDecision() {
+    if (this.state) {
+      this.state.pendingDecision = null;
+      SaveManager.save(this.state);
+    }
+    this.simDay();
+  },
+
+  // ── Waiver Wire ────────────────────────────────────────────────────────────
+
+  _claimWaiver(playerId) {
+    if (!this.state) return;
+    const player = this.playerMap[playerId];
+    if (!player) return;
+
+    const maxRoster = this.state.rosterExpanded ? 40 : 26;
+    const currentCount = Object.values(this.playerMap).filter(
+      p => p.teamId === this.state.userTeamId && !p.isRetired
+    ).length;
+
+    if (currentCount >= maxRoster) {
+      this.go('waiverWire', { message: `Roster full! Release a player before claiming.` });
+      return;
+    }
+
+    // Move player to user team
+    const prevTeam = player.teamId;
+    player.teamId  = this.state.userTeamId;
+    player.isWaived = true;
+
+    this.state.waiverPickupDone = true;
+
+    const tm = this.getTeamMeta(this.state.userTeamId);
+    this.state.news.unshift(`🛒 ${player.name} (${player.position}, OVR ${player.overall}) claimed off waivers by ${tm.name}!`);
+
+    // Achievement check
+    if (typeof checkAchievements === 'function') {
+      const newAchs = checkAchievements(this.state, this.playerMap);
+      if (newAchs.length > 0) {
+        if (!this.state.pendingAchievements) this.state.pendingAchievements = [];
+        this.state.pendingAchievements.push(...newAchs);
+      }
+    }
+
+    SaveManager.save(this.state);
+    this.go('waiverWire', { message: `${player.name} claimed! Welcome to ${tm.name}.` });
+  },
+
+  // ── Sound Toggle ───────────────────────────────────────────────────────────
+
+  _toggleSound() {
+    if (typeof Sound !== 'undefined') Sound.toggle();
+    this.go('teamHub');
+  },
+
+  // ── Season Recap Builder ───────────────────────────────────────────────────
+
+  _buildSeasonRecap(year) {
+    const rec  = this.state.teamRecords[this.state.userTeamId] || {};
+    const tm   = TEAMS_META.find(t => t.id === this.state.userTeamId);
+
+    // Top batter
+    let topBatter = null, topBatterStat = '';
+    let maxHR = 0;
+    for (const [pid, s] of Object.entries(this.state.seasonStats.batting || {})) {
+      const p = this.playerMap[pid];
+      if (!p || p.teamId !== this.state.userTeamId) continue;
+      if ((s.hr || 0) > maxHR) {
+        maxHR = s.hr;
+        topBatter = p;
+        topBatterStat = `${s.hr}HR, ${s.rbi}RBI`;
+      }
+    }
+
+    // Top pitcher
+    let topPitcher = null, topPitcherStat = '';
+    let minERA = 99;
+    for (const [pid, s] of Object.entries(this.state.seasonStats.pitching || {})) {
+      const p = this.playerMap[pid];
+      if (!p || p.teamId !== this.state.userTeamId) continue;
+      if ((s.ip || 0) >= 50) {
+        const era = (s.er * 9) / s.ip;
+        if (era < minERA) {
+          minERA = era;
+          topPitcher = p;
+          topPitcherStat = `${s.w}-${s.l}, ${era.toFixed(2)} ERA`;
+        }
+      }
+    }
+
+    // Playoff result
+    let playoffResult = 'Missed Playoffs';
+    const po = this.state.playoffs;
+    if (po?.champion === this.state.userTeamId) {
+      playoffResult = '🏆 World Series Champions!';
+    } else if (po?.worldSeries?.team1 === this.state.userTeamId || po?.worldSeries?.team2 === this.state.userTeamId) {
+      playoffResult = '🥈 World Series';
+    } else if (po) {
+      playoffResult = 'Playoffs';
+    }
+
+    // Top moments from news
+    const topMoments = (this.state.news || [])
+      .filter(n => n.includes('MILESTONE') || n.includes('🏆') || n.includes('shutout') || n.includes('Shutout'))
+      .slice(0, 5)
+      .map(n => n.replace('🌟 MILESTONE: ', '').replace('📅 ', ''));
+
+    // Awards
+    const awards = [];
+    const aw = this.state.awards;
+    if (aw) {
+      const myTeam = this.state.userTeamId;
+      for (const lg of ['AL', 'NL']) {
+        if (aw[lg]?.mvp?.teamId === myTeam) awards.push(`${aw[lg].mvp.name} — ${lg} MVP`);
+        if (aw[lg]?.cyYoung?.teamId === myTeam) awards.push(`${aw[lg].cyYoung.name} — ${lg} Cy Young`);
+        if (aw[lg]?.roy?.teamId === myTeam) awards.push(`${aw[lg].roy.name} — ${lg} ROY`);
+      }
+    }
+
+    const recap = {
+      year,
+      wins:         rec.wins || 0,
+      losses:       rec.losses || 0,
+      runsFor:      rec.runsFor || 0,
+      runsAgainst:  rec.runsAgainst || 0,
+      topBatter,
+      topBatterStat,
+      topPitcher,
+      topPitcherStat,
+      playoffResult,
+      champion:     po?.champion || null,
+      topMoments,
+      awards,
+    };
+
+    if (!this.state.seasonRecaps) this.state.seasonRecaps = [];
+    this.state.seasonRecaps.push(recap);
+  },
+
+  // ── Achievement / HOF Dismiss ──────────────────────────────────────────────
+
+  _dismissAchievement() {
+    if (this.state) {
+      this.state.pendingAchievements = [];
+      SaveManager.save(this.state);
+    }
+    this.go('teamHub');
+  },
+
+  _dismissHOF() {
+    if (this.state) {
+      this.state.pendingHOF = [];
+      SaveManager.save(this.state);
+    }
+    this.go('teamHub');
+  },
+
   // ── Popup Dismiss ─────────────────────────────────────────────────────────
 
   _dismissPopup() {
     if (this.state) {
       this.state.pendingInjuryPopups = [];
       this.state.pendingReturnPopups = [];
+      // Also dismiss milestone toast on next interaction
+      if (this.state.pendingMilestones?.length > 0) {
+        this.state.pendingMilestones.shift(); // remove first shown
+      }
       SaveManager.save(this.state);
     }
     this.go('teamHub');

@@ -1082,3 +1082,390 @@ html, body {
 .fo-action-card:hover { border-color: var(--accent); }
 .trade-team-card:hover { border-color: var(--accent); background: rgba(79,142,247,0.05); }
 
+/* ═══════════════════════════════════════════════════════════════
+   Phase 2 — Animated Transitions
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes screenSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.screen {
+  animation: screenSlideIn 0.18s ease-out both;
+}
+
+/* Popup entrance */
+@keyframes popupPop {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.popup-card {
+  animation: popupPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Achievement flash */
+@keyframes achieveFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(244, 200, 66, 0.7); }
+  70%  { box-shadow: 0 0 0 16px rgba(244, 200, 66, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 200, 66, 0); }
+}
+.achievement-unlock {
+  animation: achieveFlash 0.7s ease-out;
+}
+
+/* ── Manager Decision Card ──────────────────────────────────── */
+
+.decision-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.decision-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 100%;
+  animation: popupPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.decision-badge {
+  display: inline-block;
+  background: var(--gold);
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.decision-situation {
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+.decision-prompt {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  line-height: 1.3;
+}
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.12s, background 0.12s;
+}
+.decision-option:active { opacity: 0.8; transform: scale(0.98); }
+.decision-option-label { font-size: 15px; font-weight: 600; flex: 1; }
+.decision-option-desc  { font-size: 12px; color: var(--text2); }
+.decision-skip {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  padding: 6px;
+  text-align: center;
+}
+
+/* ── Milestone Popup ────────────────────────────────────────── */
+
+.milestone-popup {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  background: var(--gold);
+  color: #000;
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
+  white-space: normal;
+  text-align: center;
+  animation: milestoneIn 0.3s ease-out both, milestoneOut 0.4s ease-in 3s both;
+  pointer-events: none;
+}
+@keyframes milestoneIn {
+  from { opacity: 0; top: -20px; }
+  to   { opacity: 1; top: 20px; }
+}
+@keyframes milestoneOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ── Achievement Popup ──────────────────────────────────────── */
+
+.achievement-popup {
+  background: linear-gradient(135deg, #2a2400, #1a1600);
+  border: 1.5px solid var(--gold);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.achievement-popup-icon { font-size: 32px; flex-shrink: 0; }
+.achievement-popup-body {}
+.achievement-popup-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 2px; }
+.achievement-popup-name  { font-size: 17px; font-weight: 800; }
+.achievement-popup-desc  { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+/* ── Rivalry Badge ──────────────────────────────────────────── */
+
+.rivalry-badge {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ── Season Recap Screen ────────────────────────────────────── */
+
+.recap-screen {}
+.recap-hero {
+  padding: 20px 16px;
+  background: linear-gradient(135deg, var(--bg2), var(--bg));
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+.recap-year   { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+.recap-title  { font-size: 26px; font-weight: 800; margin: 4px 0; }
+.recap-record { font-size: 18px; color: var(--gold); font-weight: 700; }
+.recap-cards  { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 14px; }
+.recap-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.recap-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); margin-bottom: 4px; }
+.recap-card-value { font-size: 18px; font-weight: 800; }
+.recap-card-sub   { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.recap-section    { padding: 0 14px 14px; }
+.recap-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); margin-bottom: 8px; font-weight: 700; }
+.recap-champ-banner {
+  background: linear-gradient(135deg, #2a1f00, #1a1300);
+  border: 1.5px solid var(--gold);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  text-align: center;
+  margin: 0 14px 14px;
+}
+.recap-champ-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); }
+.recap-champ-name  { font-size: 22px; font-weight: 800; margin-top: 2px; }
+
+/* ── Waiver Wire Screen ──────────────────────────────────────── */
+
+.waiver-screen {}
+.waiver-list { padding: 8px 0; }
+.waiver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.waiver-pos   { font-size: 11px; font-weight: 700; padding: 3px 6px; border-radius: 4px; background: var(--bg3); color: var(--text2); min-width: 28px; text-align: center; }
+.waiver-info  { flex: 1; }
+.waiver-name  { font-size: 15px; font-weight: 600; }
+.waiver-meta  { font-size: 12px; color: var(--text2); }
+.waiver-ovr   { font-size: 13px; font-weight: 700; color: var(--accent); min-width: 40px; text-align: right; }
+.waiver-claim-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.waiver-claim-btn:active { opacity: 0.8; }
+.roster-full-note {
+  background: rgba(235, 68, 90, 0.1);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 10px 14px;
+  font-size: 13px;
+  color: var(--red);
+}
+.expansion-badge {
+  background: var(--green);
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+/* ── Trophy Case Screen ──────────────────────────────────────── */
+
+.trophy-screen {}
+.trophy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+}
+.trophy-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 12px;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+.trophy-card.unlocked {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, #221c00, #1a1600);
+}
+.trophy-card.locked { opacity: 0.45; }
+.trophy-icon    { font-size: 26px; margin-bottom: 6px; }
+.trophy-name    { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.trophy-desc    { font-size: 11px; color: var(--text2); }
+.trophy-season  { font-size: 10px; color: var(--gold); margin-top: 4px; font-weight: 600; }
+.trophy-count   { font-size: 20px; font-weight: 800; color: var(--gold); margin-bottom: 4px; }
+
+/* ── Hall of Fame Screen ─────────────────────────────────────── */
+
+.hof-screen {}
+.hof-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.hof-icon  { font-size: 28px; flex-shrink: 0; }
+.hof-info  { flex: 1; }
+.hof-name  { font-size: 15px; font-weight: 700; }
+.hof-meta  { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.hof-reason{ font-size: 12px; color: var(--gold); margin-top: 2px; font-weight: 600; }
+.hof-team  { font-size: 11px; color: var(--text3); }
+.hof-empty { padding: 40px 20px; text-align: center; color: var(--text2); }
+
+/* ── Sound Toggle Button ─────────────────────────────────────── */
+
+.sound-toggle {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.sound-toggle.on  { border-color: var(--green); color: var(--green); }
+.sound-toggle.off { border-color: var(--text3); color: var(--text3); }
+
+/* ── Rainout Banner ──────────────────────────────────────────── */
+
+.rainout-banner {
+  background: linear-gradient(135deg, #001530, #0a1f3a);
+  border: 1px solid #2a5080;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 10px 14px;
+  font-size: 14px;
+  color: #7ab8e8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Roster Expansion Banner ────────────────────────────────── */
+
+.expansion-banner {
+  background: linear-gradient(135deg, #002a15, #001a0d);
+  border: 1px solid #2a6040;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 8px 14px 0;
+  font-size: 13px;
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Career Stats on Player Card ────────────────────────────── */
+
+.career-section { padding: 14px 16px; border-top: 1px solid var(--border); }
+.career-history { }
+.career-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  align-items: center;
+}
+.career-row:last-child { border-bottom: none; }
+.career-year { font-weight: 700; min-width: 36px; color: var(--text2); }
+.career-team { color: var(--text2); min-width: 32px; font-size: 12px; }
+.career-stats{ flex: 1; color: var(--text); }
+
+/* ── Double-header indicator in schedule ────────────────────── */
+
+.dh-badge {
+  display: inline-block;
+  background: var(--gold);
+  color: #000;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Pending decisions badge on sim button ──────────────────── */
+
+.sim-btn-badge {
+  display: inline-block;
+  background: var(--gold);
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 2px 6px;
+  margin-left: 6px;
+}

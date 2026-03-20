@@ -123,9 +123,10 @@ const Screens = {
           const oppId  = isHome ? g.awayTeamId : g.homeTeamId;
           const opp    = app.getTeamMeta(oppId);
           const oppRec = app.getTeamRecord(oppId);
+          const isRivalry = isDivisional;
           return `
-            <div class="next-game-card" style="--opp-primary:${opp.primary}">
-              <div class="ng-label">${isHome ? 'HOME' : 'AWAY'} · Day ${g.day}</div>
+            <div class="next-game-card" style="--opp-primary:${opp.primary}${isRivalry ? ';border-color:var(--red)' : ''}">
+              <div class="ng-label">${isHome ? 'HOME' : 'AWAY'} · Day ${g.day}${isRivalry ? '<span class="rivalry-badge">RIVALRY</span>' : ''}${g.isDoubleheader ? '<span class="dh-badge">DH</span>' : ''}</div>
               <div class="ng-matchup">
                 ${logoImg(oppId, 'team-logo-sm')}
                 <span class="ng-team">vs. <strong>${opp.name}</strong></span>
@@ -178,9 +179,48 @@ const Screens = {
       ? Comps.injuryPopup(state.pendingInjuryPopups) : '';
     const retPopup = (!injPopup && state.pendingReturnPopups?.length > 0)
       ? Comps.returnPopup(state.pendingReturnPopups) : '';
+    // Achievement popup
+    const achPopup = (!injPopup && !retPopup && state.pendingAchievements?.length > 0)
+      ? Comps.achievementPopup(state.pendingAchievements) : '';
+    // HOF popup
+    const hofPopup = (!injPopup && !retPopup && !achPopup && state.pendingHOF?.length > 0)
+      ? Comps.hofPopup(state.pendingHOF) : '';
+    // Manager decision overlay
+    const decisionOverlay = state.pendingDecision
+      ? Comps.decisionCard(state.pendingDecision) : '';
+    // Milestone toast (show first pending)
+    const milestoneToast = (!injPopup && !retPopup && !achPopup && state.pendingMilestones?.length > 0)
+      ? Comps.milestoneToast(state.pendingMilestones[0].msg) : '';
+
+    // Rivalry check
+    const isDivisional = (() => {
+      const next = upcoming[0];
+      if (!next) return false;
+      const oppId = next.homeTeamId === state.userTeamId ? next.awayTeamId : next.homeTeamId;
+      const userMeta = TEAMS_META.find(t => t.id === state.userTeamId);
+      const oppMeta  = TEAMS_META.find(t => t.id === oppId);
+      return userMeta && oppMeta && userMeta.league === oppMeta.league && userMeta.division === oppMeta.division;
+    })();
+
+    // Game recap for last played game
+    const lastGameRecap = (() => {
+      if (!params.lastGame) return '';
+      const recap = state.gameRecaps?.[params.lastGame];
+      if (!recap) return '';
+      return `<div class="news-item" style="font-style:italic;color:var(--text2);padding:10px 14px;border-left:2px solid var(--accent);margin:8px 14px;background:var(--bg2);border-radius:var(--radius)">"${recap}"</div>`;
+    })();
+
+    // Sound toggle
+    const soundEnabled = typeof Sound !== 'undefined' ? Sound.enabled : true;
+
+    // Roster expansion banner
+    const expansionBanner = state.rosterExpanded
+      ? `<div class="expansion-banner">🗓️ September — Roster expanded to 40 players</div>` : '';
 
     return `
-      ${injPopup || retPopup}
+      ${injPopup || retPopup || achPopup || hofPopup}
+      ${decisionOverlay}
+      ${milestoneToast}
       <div class="screen hub-screen">
         <div class="hub-header" style="--team-primary:${tm.primary};--team-secondary:${tm.secondary}">
           <div class="hub-top-row">
@@ -199,9 +239,11 @@ const Screens = {
         <div class="hub-content">
           ${nextGameCard}
 
+          ${expansionBanner}
+
           <div class="sim-buttons">
             ${phase === 'regular_season' ? `
-              <button class="btn btn-sim" data-action="simDay">Sim Day</button>
+              <button class="btn btn-sim" data-action="simDay">Sim Day${state.pendingDecision ? '<span class="sim-btn-badge">!</span>' : ''}</button>
               <button class="btn btn-sim" data-action="simWeek">Sim Week</button>
               <button class="btn btn-sim btn-sim-season" data-action="simSeason">Sim Season</button>
             ` : phase === 'playoffs' ? `
@@ -211,12 +253,14 @@ const Screens = {
               <div class="offseason-banner">🏆 Season Complete!</div>
               ${state.playoffs ? `<button class="btn btn-secondary" data-action="viewPlayoffs">View Playoffs Bracket</button>` : ''}
               ${state.awards ? `<button class="btn btn-secondary" data-action="viewAwards">View Awards</button>` : ''}
+              ${state.seasonRecaps?.length > 0 ? `<button class="btn btn-secondary" data-action="viewSeasonRecap">📊 Year in Review</button>` : ''}
               ${state.offseasonPhase === 'free_agency' ? `<button class="btn btn-primary" data-action="runFreeAgency">Run Free Agency</button>` : ''}
               ${state.offseasonPhase === 'draft' ? `<button class="btn btn-primary" data-action="runDraft">Run MLB Draft</button>` : ''}
               ${state.offseasonPhase === 'complete' ? `<button class="btn btn-primary" data-action="startNewSeason">Start ${(state.season.year || 2026) + 1} Season</button>` : ''}
             `}
           </div>
 
+          ${lastGameRecap}
           ${recentHTML}
 
           ${(() => {
@@ -233,6 +277,20 @@ const Screens = {
           })()}
 
           ${newsHTML}
+
+          ${(state.waiverPool?.length > 0 && phase === 'regular_season') ? `
+            <div class="news-section" style="margin-top:0">
+              <button class="fo-nav-btn" onclick="App.go('waiverWire')" style="border-radius:var(--radius);background:var(--card)">
+                <span>🛒 Waiver Wire <span style="color:var(--text2);font-size:12px">${state.waiverPool.filter(id=>App.playerMap[id]&&!App.playerMap[id].isWaived).length} available</span></span>
+                <span class="fo-btn-arrow">›</span>
+              </button>
+            </div>` : ''}
+
+          <div style="padding:0 14px 4px;display:flex;justify-content:flex-end">
+            <button class="sound-toggle ${soundEnabled ? 'on' : 'off'}" data-action="toggleSound">
+              ${soundEnabled ? '🔊 Sound On' : '🔇 Sound Off'}
+            </button>
+          </div>
 
           ${userStanding ? `
             <div class="division-snapshot">
@@ -633,17 +691,20 @@ const Screens = {
       .filter(g => g.homeTeamId === state.userTeamId || g.awayTeamId === state.userTeamId)
       .slice(0, 50); // show next 50 games
 
+    const userMeta = app.getTeamMeta(state.userTeamId);
     const rows = userGames.map(g => {
       const isHome = g.homeTeamId === state.userTeamId;
       const oppId  = isHome ? g.awayTeamId : g.homeTeamId;
       const opp    = app.getTeamMeta(oppId);
+      const isRival = opp.league === userMeta.league && opp.division === userMeta.division;
+      const dhBadge = g.isDoubleheader ? `<span class="dh-badge">DH</span>` : '';
+      const rvBadge = isRival ? `<span class="rivalry-badge" style="font-size:8px;padding:1px 4px">RIV</span>` : '';
 
       if (g.status === 'completed' && g.result) {
         const myScore  = isHome ? g.result.homeScore : g.result.awayScore;
         const oppScore = isHome ? g.result.awayScore : g.result.homeScore;
         const won = myScore > oppScore;
         const boxId = g.result.gameId;
-        // Check if box score available
         const hasBox = state.boxScores.some(b => b.gameId === boxId);
         return `
           <div class="schedule-row completed ${won ? 'won' : 'lost'}"
@@ -651,7 +712,7 @@ const Screens = {
             <span class="sr-day">D${g.day}</span>
             <span class="sr-ha">${isHome ? 'vs' : '@'}</span>
             ${logoImg(oppId, 'team-logo-xs')}
-            <span class="sr-opp">${opp.name}</span>
+            <span class="sr-opp">${opp.name}${rvBadge}${dhBadge}</span>
             <span class="sr-score">${myScore}–${oppScore}</span>
             <span class="sr-result">${won ? 'W' : 'L'}</span>
           </div>`;
@@ -661,7 +722,7 @@ const Screens = {
             <span class="sr-day">D${g.day}</span>
             <span class="sr-ha">${isHome ? 'vs' : '@'}</span>
             ${logoImg(oppId, 'team-logo-xs')}
-            <span class="sr-opp">${opp.name}</span>
+            <span class="sr-opp">${opp.name}${rvBadge}${dhBadge}</span>
             <span class="sr-score">—</span>
             <span class="sr-result sr-upcoming">•</span>
           </div>`;
@@ -787,6 +848,40 @@ const Screens = {
             ` : ''}
           ` : ''}
         </div>
+
+        ${(() => {
+          // Career stats section
+          if (!app.state.careerStats?.[player.id]) return '';
+          const totals = typeof getCareerTotals === 'function'
+            ? getCareerTotals(app.state.careerStats, player.id)
+            : null;
+          if (!totals) return '';
+          const seasons = [...(totals.battingHistory || []), ...(totals.pitchingHistory || [])];
+          if (seasons.length === 0) return '';
+
+          const histRows = (isPit || isTWP ? totals.pitchingHistory : totals.battingHistory).map(s => {
+            const tm2 = app.getTeamMeta(player.teamId);
+            let statStr = '';
+            if (isPit || isTWP) {
+              const era = s.ip > 0 ? ((s.er || 0) * 9 / s.ip).toFixed(2) : '—';
+              statStr = `${s.w || 0}-${s.l || 0} ${era} ERA ${Math.round(s.ip || 0)}IP ${s.k || 0}K`;
+            } else {
+              const avg = s.ab > 0 ? (s.h / s.ab).toFixed(3).replace('0.','.') : '.000';
+              statStr = `${avg} ${s.hr || 0}HR ${s.rbi || 0}RBI ${s.sb > 0 ? (s.sb + 'SB') : ''}`.trim();
+            }
+            return `
+              <div class="career-row">
+                <span class="career-year">${s.year}</span>
+                <span class="career-team">${tm2.id}</span>
+                <span class="career-stats">${statStr}</span>
+              </div>`;
+          }).join('');
+
+          if (!histRows) return '';
+          return `
+            <div class="section-label" style="padding:14px 16px 6px">Career Stats</div>
+            <div class="career-history" style="padding:0 16px 14px">${histRows}</div>`;
+        })()}
 
         ${Comps.bottomNav('roster')}
       </div>`;
@@ -1358,6 +1453,31 @@ const Screens = {
         <button class="fo-nav-btn" onclick="App.go('rotation')">
           <span>⚾ Pitching Rotation & Bullpen</span><span class="fo-btn-arrow">›</span>
         </button>
+        ${(state.waiverPool?.length > 0) ? `
+        <button class="fo-nav-btn" onclick="App.go('waiverWire')">
+          <span>🛒 Waiver Wire</span><span class="fo-btn-arrow">›</span>
+        </button>` : ''}
+      </div>
+      <div class="fo-section">
+        <div class="section-label">Franchise History</div>
+        <button class="fo-nav-btn" onclick="App.go('trophyCase')">
+          <span>🏅 Trophy Case</span>
+          <span style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:12px;color:var(--gold)">${Object.values(state.achievements||{}).filter(a=>a.unlocked).length} Unlocked</span>
+            <span class="fo-btn-arrow">›</span>
+          </span>
+        </button>
+        <button class="fo-nav-btn" onclick="App.go('hofTracker')">
+          <span>🏛️ Hall of Fame</span>
+          <span style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:12px;color:var(--gold)">${(state.hofMembers||[]).length} Inducted</span>
+            <span class="fo-btn-arrow">›</span>
+          </span>
+        </button>
+        ${state.seasonRecaps?.length > 0 ? `
+        <button class="fo-nav-btn" data-action="viewSeasonRecap">
+          <span>📊 Year in Review</span><span class="fo-btn-arrow">›</span>
+        </button>` : ''}
       </div>`;
 
     // Offseason actions
@@ -1482,6 +1602,221 @@ const Screens = {
           <button class="btn btn-secondary" data-action="runFreeAgency">Run AI Free Agency →</button>
         </div>
         ${Comps.bottomNav('frontOffice')}
+      </div>`;
+  },
+
+  // ── Waiver Wire ────────────────────────────────────────────────────────────
+
+  waiverWire(app, params = {}) {
+    const { state } = app;
+    const pool = (state.waiverPool || [])
+      .map(id => App.playerMap[id])
+      .filter(Boolean)
+      .filter(p => !p.isWaived); // exclude already claimed
+
+    const maxRoster = state.rosterExpanded ? 40 : 26;
+    const currentRoster = app.getTeamPlayers(state.userTeamId).length;
+    const rosterFull = currentRoster >= maxRoster;
+    const posFilter = params.posFilter || 'all';
+
+    const filtered = posFilter === 'sp'  ? pool.filter(p => p.position === 'SP')
+                   : posFilter === 'rp'  ? pool.filter(p => p.position === 'RP')
+                   : posFilter === 'pos' ? pool.filter(p => !['SP','RP'].includes(p.position))
+                   : pool;
+
+    const expBadge = state.rosterExpanded
+      ? `<span class="expansion-badge">September Expanded (40-man)</span>` : '';
+
+    const msg = params.message
+      ? `<div class="sim-message win" style="margin:8px 12px 0">${params.message}</div>` : '';
+
+    const rows = filtered.map(p => {
+      const batSt = state.seasonStats.batting[p.id];
+      const pitSt = state.seasonStats.pitching[p.id];
+      const isPit = ['SP','RP','TWP'].includes(p.position);
+      let statStr = '';
+      if (isPit && pitSt?.ip > 0) statStr = `${pitSt.w}-${pitSt.l} ${calcERA(pitSt)} ERA`;
+      else if (batSt?.ab > 0) statStr = `${calcAVG(batSt)} ${batSt.hr}HR`;
+      else statStr = `Age ${p.age}`;
+
+      return `
+        <div class="waiver-row">
+          <span class="waiver-pos">${p.position}</span>
+          <div class="waiver-info">
+            <div class="waiver-name">${p.name}</div>
+            <div class="waiver-meta">${statStr} · ${p.teamId}</div>
+          </div>
+          <span class="waiver-ovr">OVR ${p.overall}</span>
+          ${rosterFull
+            ? `<button class="waiver-claim-btn" disabled style="opacity:0.4">Full</button>`
+            : `<button class="waiver-claim-btn" data-action="claimWaiver" data-player-id="${p.id}">Claim</button>`
+          }
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="screen waiver-screen">
+        <div class="screen-header">
+          <h1>Waiver Wire ${expBadge}</h1>
+          <div class="filter-tabs" style="margin-top:8px">
+            <button class="filter-tab ${posFilter==='all'?'active':''}"  onclick="App.go('waiverWire',{posFilter:'all'})">All</button>
+            <button class="filter-tab ${posFilter==='sp'?'active':''}"   onclick="App.go('waiverWire',{posFilter:'sp'})">SP</button>
+            <button class="filter-tab ${posFilter==='rp'?'active':''}"   onclick="App.go('waiverWire',{posFilter:'rp'})">RP</button>
+            <button class="filter-tab ${posFilter==='pos'?'active':''}"  onclick="App.go('waiverWire',{posFilter:'pos'})">Pos</button>
+          </div>
+        </div>
+        ${msg}
+        ${rosterFull ? `<div class="roster-full-note">⚠️ Roster full (${currentRoster}/${maxRoster}). Release a player first.</div>` : ''}
+        <div style="padding:6px 14px;font-size:12px;color:var(--text3)">${currentRoster}/${maxRoster} roster spots used</div>
+        <div class="waiver-list">
+          ${rows || '<div class="empty-state" style="padding:40px 20px;text-align:center">No waiver wire players available yet.<br><small>They appear after games are simulated.</small></div>'}
+        </div>
+        ${Comps.bottomNav('frontOffice')}
+      </div>`;
+  },
+
+  // ── Trophy Case ────────────────────────────────────────────────────────────
+
+  trophyCase(app, params = {}) {
+    const { state } = app;
+    const achievements = state.achievements || {};
+    const unlocked = ACHIEVEMENTS.filter(a => achievements[a.id]?.unlocked);
+    const locked   = ACHIEVEMENTS.filter(a => !achievements[a.id]?.unlocked);
+    const total    = ACHIEVEMENTS.length;
+
+    const cards = ACHIEVEMENTS.map(ach => {
+      const info = achievements[ach.id];
+      const isUnlocked = info?.unlocked;
+      return `
+        <div class="trophy-card ${isUnlocked ? 'unlocked' : 'locked'}">
+          <div class="trophy-icon">${ach.icon}</div>
+          <div class="trophy-name">${ach.name}</div>
+          <div class="trophy-desc">${ach.desc}</div>
+          ${isUnlocked ? `<div class="trophy-season">${info.season} Season</div>` : ''}
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="screen trophy-screen">
+        <div class="screen-header">
+          <h1>Trophy Case</h1>
+          <p style="font-size:13px;color:var(--text2);margin-top:2px">${unlocked.length} / ${total} Unlocked</p>
+        </div>
+        <div class="trophy-grid">
+          ${cards}
+        </div>
+        ${Comps.bottomNav('stats')}
+      </div>`;
+  },
+
+  // ── Hall of Fame ───────────────────────────────────────────────────────────
+
+  hofTracker(app, params = {}) {
+    const { state } = app;
+    const members = state.hofMembers || [];
+
+    const rows = members.map(m => {
+      const tm = app.getTeamMeta(m.previousTeam);
+      const isUserAlum = m.previousTeam === state.userTeamId;
+      return `
+        <div class="hof-member ${isUserAlum ? 'user-team' : ''}" style="${isUserAlum ? 'background:rgba(79,142,247,0.07);' : ''}">
+          <div class="hof-icon">🏛️</div>
+          <div class="hof-info">
+            <div class="hof-name">${m.name} ${isUserAlum ? '⭐' : ''}</div>
+            <div class="hof-meta">${m.position} · ${m.reason}</div>
+            <div class="hof-team" style="color:${tm.primary}">Previously: ${tm.full}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="screen hof-screen">
+        <div class="screen-header">
+          <h1>Hall of Fame</h1>
+          <p style="font-size:13px;color:var(--text2);margin-top:2px">${members.length} Inductee${members.length !== 1 ? 's' : ''}</p>
+        </div>
+        ${rows.length > 0
+          ? `<div>${rows}</div>`
+          : `<div class="hof-empty">
+              <div style="font-size:40px;margin-bottom:12px">🏛️</div>
+              <p>No inductees yet.</p>
+              <p style="font-size:12px;margin-top:6px">Players with exceptional careers are inducted when they retire (age 37+).</p>
+            </div>`
+        }
+        ${Comps.bottomNav('stats')}
+      </div>`;
+  },
+
+  // ── Season Recap ───────────────────────────────────────────────────────────
+
+  seasonRecap(app, params = {}) {
+    const { state } = app;
+    const recap = (state.seasonRecaps || []).slice(-1)[0];
+    const tm = app.getTeamMeta(state.userTeamId);
+
+    if (!recap) {
+      return `
+        <div class="screen recap-screen">
+          <div class="screen-header"><h1>Season Recap</h1></div>
+          <div class="empty-state">Complete a full season to see the recap.</div>
+          ${Comps.bottomNav('teamHub')}
+        </div>`;
+    }
+
+    const champMeta = app.getTeamMeta(recap.champion || '');
+    const isUserChamp = recap.champion === state.userTeamId;
+
+    const statCards = [
+      recap.topBatter ? { label: 'Top Batter',  value: recap.topBatter.name,  sub: recap.topBatterStat } : null,
+      recap.topPitcher ? { label: 'Top Pitcher', value: recap.topPitcher.name, sub: recap.topPitcherStat } : null,
+      { label: 'Final Record', value: `${recap.wins}–${recap.losses}`, sub: recap.divFinish || '' },
+      { label: 'Runs Scored',  value: recap.runsFor || '–', sub: `${recap.runsAgainst || '–'} allowed` },
+    ].filter(Boolean);
+
+    return `
+      <div class="screen recap-screen">
+        <div class="recap-hero">
+          <div class="recap-year">${recap.year} Season Recap</div>
+          <div class="recap-title">${tm.city} ${tm.name}</div>
+          <div class="recap-record">${recap.wins}–${recap.losses}</div>
+        </div>
+
+        ${isUserChamp ? `
+          <div class="recap-champ-banner">
+            <div class="recap-champ-label">🏆 World Series Champions!</div>
+            <div class="recap-champ-name">${tm.full}</div>
+          </div>` : recap.champion ? `
+          <div style="padding:12px 14px;font-size:14px;text-align:center;color:var(--text2)">
+            🏆 World Series Champion: <strong style="color:${champMeta.primary}">${champMeta.full}</strong>
+          </div>` : ''
+        }
+
+        <div class="recap-cards">
+          ${statCards.map(c => `
+            <div class="recap-card">
+              <div class="recap-card-label">${c.label}</div>
+              <div class="recap-card-value">${c.value}</div>
+              <div class="recap-card-sub">${c.sub}</div>
+            </div>`).join('')}
+        </div>
+
+        ${recap.topMoments?.length > 0 ? `
+          <div class="recap-section">
+            <div class="recap-section-title">Top Moments</div>
+            ${recap.topMoments.map(m => `<div class="news-item">⚡ ${m}</div>`).join('')}
+          </div>` : ''}
+
+        ${recap.awards?.length > 0 ? `
+          <div class="recap-section">
+            <div class="recap-section-title">Awards</div>
+            ${recap.awards.map(a => `<div class="news-item">🏆 ${a}</div>`).join('')}
+          </div>` : ''}
+
+        <div style="padding:0 14px 14px">
+          <button class="btn btn-secondary" onclick="App.go('teamHub')">‹ Back to Franchise</button>
+        </div>
+
+        ${Comps.bottomNav('teamHub')}
       </div>`;
   },
 
