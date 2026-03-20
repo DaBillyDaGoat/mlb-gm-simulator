@@ -1030,7 +1030,7 @@ const Screens = {
       let statStr = batSt && batSt.ab > 0
         ? `${calcAVG(batSt)} · ${batSt.hr}HR · ${batSt.rbi}RBI`
         : `OVR ${p.overall}`;
-      const isSelected = selected === i;
+      const isSelected = selected !== null && selected !== undefined && selected === i;
 
       return `
         <button class="lineup-slot ${isSelected ? 'selected' : ''} ${inj ? 'on-il' : ''}"
@@ -1042,7 +1042,7 @@ const Screens = {
         </button>`;
     }).join('');
 
-    const instructions = selected !== null
+    const instructions = (selected !== null && selected !== undefined)
       ? `Tap another player to swap with #${selected + 1} · <strong>Tap same player to cancel</strong>`
       : 'Tap a player to select · Tap another to swap positions';
 
@@ -1082,7 +1082,7 @@ const Screens = {
       const statStr = pitSt && pitSt.ip > 0
         ? `${pitSt.w}-${pitSt.l} ERA ${calcERA(pitSt)}`
         : `OVR ${p.overall}`;
-      const isSelected = selected === i;
+      const isSelected = selected !== null && selected !== undefined && selected === i;
 
       return `
         <button class="lineup-slot ${isSelected ? 'selected' : ''} ${inj ? 'on-il' : ''}"
@@ -1111,7 +1111,7 @@ const Screens = {
         </div>`;
     }).join('');
 
-    const instructions = selected !== null
+    const instructions = (selected !== null && selected !== undefined)
       ? `Tap another starter to swap with #${selected + 1}`
       : 'Tap a starter to reorder the rotation';
 
