@@ -182,14 +182,38 @@ const Screens = {
           ${nextGameCard}
 
           <div class="sim-buttons">
-            ${phase !== 'offseason' ? `
+            ${phase === 'regular_season' ? `
               <button class="btn btn-sim" data-action="simDay">Sim Day</button>
               <button class="btn btn-sim" data-action="simWeek">Sim Week</button>
               <button class="btn btn-sim btn-sim-season" data-action="simSeason">Sim Season</button>
-            ` : `<div class="offseason-banner">🏆 Season Complete! Check standings for final results.</div>`}
+            ` : phase === 'playoffs' ? `
+              <div class="offseason-banner">🏆 Regular season complete! Time for the playoffs.</div>
+              <button class="btn btn-primary" data-action="startPlayoffs">▶ Sim Playoffs</button>
+            ` : `
+              <div class="offseason-banner">🏆 Season Complete!</div>
+              ${state.playoffs ? `<button class="btn btn-secondary" data-action="viewPlayoffs">View Playoffs Bracket</button>` : ''}
+              ${state.awards ? `<button class="btn btn-secondary" data-action="viewAwards">View Awards</button>` : ''}
+              ${state.offseasonPhase === 'free_agency' ? `<button class="btn btn-primary" data-action="runFreeAgency">Run Free Agency</button>` : ''}
+              ${state.offseasonPhase === 'draft' ? `<button class="btn btn-primary" data-action="runDraft">Run MLB Draft</button>` : ''}
+              ${state.offseasonPhase === 'complete' ? `<button class="btn btn-primary" data-action="startNewSeason">Start ${(state.season.year || 2026) + 1} Season</button>` : ''}
+            `}
           </div>
 
           ${recentHTML}
+
+          ${(() => {
+            // Injuries panel for user team
+            const injuries = app.getTeamInjuries ? app.getTeamInjuries(state.userTeamId) : [];
+            if (injuries.length === 0) return '';
+            return `<div class="news-section">
+              <div class="section-label">Injured Players (${injuries.length})</div>
+              ${injuries.slice(0, 4).map(inj => {
+                const p = App.playerMap[inj.playerId];
+                return `<div class="news-item injury-item">🏥 ${inj.playerName || p?.name || inj.playerId} — ${inj.il} (${inj.daysRemaining}d left)</div>`;
+              }).join('')}
+            </div>`;
+          })()}
+
           ${newsHTML}
 
           ${userStanding ? `
@@ -199,6 +223,15 @@ const Screens = {
                 ${userStanding.gb === 0 ? '🥇 Division Leader' : `${userStanding.gb.toFixed(1)} GB`}
                 &nbsp;·&nbsp; ${userStanding.division} Division
               </div>
+              ${(() => {
+                const payroll = app.getTeamPayroll ? app.getTeamPayroll(state.userTeamId) : 0;
+                const budget = app.getTeamMeta(state.userTeamId).budget || 150000;
+                const pct = Math.min(100, Math.round(payroll / (budget * 1.1) * 100));
+                return payroll > 0 ? `<div class="payroll-bar-wrap">
+                  <span class="payroll-label">Payroll: $${(payroll/1000).toFixed(0)}M / $${(budget/1000).toFixed(0)}M</span>
+                  <div class="payroll-bar-bg"><div class="payroll-bar ${pct > 100 ? 'over-budget' : ''}" style="width:${Math.min(pct,100)}%"></div></div>
+                </div>` : '';
+              })()}
             </div>
           ` : ''}
         </div>
@@ -221,35 +254,44 @@ const Screens = {
 
     const seasonStats = state.seasonStats;
     const filter = params.filter || 'all';
+    const injuries = state.injuries || {};
 
     const filtered = filter === 'sp'  ? players.filter(p => p.position === 'SP')
                    : filter === 'rp'  ? players.filter(p => p.position === 'RP')
                    : filter === 'pos' ? players.filter(p => !['SP','RP'].includes(p.position))
+                   : filter === 'il'  ? players.filter(p => injuries[p.id])
                    : players;
 
     const rowsHTML = filtered.map(p => {
       const batSt = seasonStats.batting[p.id];
       const pitSt = seasonStats.pitching[p.id];
       const isPit = ['SP','RP','TWP'].includes(p.position);
+      const inj   = injuries[p.id];
+      const streak = app.getPlayerStreak ? app.getPlayerStreak(p.id) : null;
+      const streakBadge = streak && streak.mod > 0 ? ' 🔥' : streak && streak.mod < 0 ? ' 🥶' : '';
 
       let statStr = '';
       if (isPit && pitSt && pitSt.ip > 0) {
         statStr = `${pitSt.w}-${pitSt.l} ERA ${calcERA(pitSt)}`;
       } else if (batSt && batSt.ab > 0) {
-        statStr = `.${calcAVG(batSt).replace('.', '')} ${batSt.hr}HR ${batSt.rbi}RBI`;
+        statStr = `${calcAVG(batSt)} ${batSt.hr}HR ${batSt.rbi}RBI ${batSt.sb > 0 ? batSt.sb + 'SB' : ''}`.trim();
       } else {
         statStr = `OVR ${p.overall}`;
       }
 
+      const injBadge = inj ? `<span class="il-badge il-${inj.il.toLowerCase()}">${inj.il}</span>` : '';
+
       return `
-        <button class="player-row" data-action="viewPlayer" data-player-id="${p.id}">
+        <button class="player-row ${inj ? 'injured' : ''}" data-action="viewPlayer" data-player-id="${p.id}">
           <span class="pr-pos ${p.position.replace('/','')}">${p.position}</span>
           <span class="pr-num">${p.jerseyNumber}</span>
-          <span class="pr-name">${p.name}</span>
+          <span class="pr-name">${p.name}${streakBadge}${injBadge}</span>
           <span class="pr-stats">${statStr}</span>
           <span class="pr-arrow">›</span>
         </button>`;
     }).join('');
+
+    const injCount = players.filter(p => injuries[p.id]).length;
 
     return `
       <div class="screen roster-screen">
@@ -260,9 +302,10 @@ const Screens = {
             <button class="filter-tab ${filter==='sp'?'active':''}" onclick="App.go('roster',{filter:'sp'})">SP</button>
             <button class="filter-tab ${filter==='rp'?'active':''}" onclick="App.go('roster',{filter:'rp'})">RP</button>
             <button class="filter-tab ${filter==='pos'?'active':''}" onclick="App.go('roster',{filter:'pos'})">Pos</button>
+            ${injCount > 0 ? `<button class="filter-tab ${filter==='il'?'active':''}" onclick="App.go('roster',{filter:'il'})">IL (${injCount})</button>` : ''}
           </div>
         </div>
-        <div class="player-list">${rowsHTML}</div>
+        <div class="player-list">${rowsHTML || '<div class="empty-state">No players found</div>'}</div>
         ${Comps.bottomNav('roster')}
       </div>`;
   },
@@ -500,6 +543,10 @@ const Screens = {
       <div class="leaders-group">
         <div class="lg-title">RBI</div>
         ${Comps.leaderTable(leaders.rbi, 'rbi', (l) => l.rbi)}
+      </div>
+      <div class="leaders-group">
+        <div class="lg-title">Stolen Bases</div>
+        ${Comps.leaderTable(leaders.sb || [], 'sb', (l) => l.sb)}
       </div>`;
 
     const pitchingLeaders = `
@@ -695,6 +742,227 @@ const Screens = {
         ${Comps.bottomNav('roster')}
       </div>`;
   },
+  // ── Playoffs Screen ────────────────────────────────────────────────────────
+
+  playoffs(app, params = {}) {
+    const { state } = app;
+    const po = state.playoffs;
+
+    if (!po) {
+      return `
+        <div class="screen">
+          <div class="screen-header"><h1>Playoffs</h1></div>
+          <div class="empty-state">
+            <p>Playoffs haven't started yet.</p>
+            ${state.season.phase === 'playoffs'
+              ? `<button class="btn btn-primary" data-action="startPlayoffs">▶ Sim Playoffs</button>`
+              : '<p>Finish the regular season first.</p>'}
+          </div>
+          ${Comps.bottomNav('standings')}
+        </div>`;
+    }
+
+    const teamName = (id) => {
+      const m = TEAMS_META.find(t => t.id === id);
+      return m ? m.name : (id || '?');
+    };
+    const teamColor = (id) => {
+      const m = TEAMS_META.find(t => t.id === id);
+      return m ? m.primary : '#444';
+    };
+
+    const seriesBlock = (series, label) => {
+      if (!series) return '';
+      const wName = teamName(series.winner);
+      const lName = teamName(series.loser);
+      const wWins = series.winner === series.team1 ? series.t1Wins : series.t2Wins;
+      const lWins = series.winner === series.team1 ? series.t2Wins : series.t1Wins;
+      const isUserInvolved = series.team1 === state.userTeamId || series.team2 === state.userTeamId;
+      return `
+        <div class="po-series ${isUserInvolved ? 'user-series' : ''}">
+          <div class="po-series-label">${label}</div>
+          <div class="po-winner" style="color:${teamColor(series.winner)}">${wName} <span class="po-wins">${wWins}</span></div>
+          <div class="po-loser">${lName} <span class="po-wins">${lWins}</span></div>
+        </div>`;
+    };
+
+    const leagueBracket = (league) => {
+      const lb = po[league];
+      if (!lb) return '';
+      return `
+        <div class="po-league">
+          <div class="po-league-title">${league}</div>
+          <div class="po-round-label">Wild Card</div>
+          <div class="po-round">
+            ${seriesBlock(lb.wildCard[0], 'WC1')}
+            ${seriesBlock(lb.wildCard[1], 'WC2')}
+          </div>
+          <div class="po-round-label">Division Series</div>
+          <div class="po-round">
+            ${seriesBlock(lb.divisionSeries[0], 'DS1')}
+            ${seriesBlock(lb.divisionSeries[1], 'DS2')}
+          </div>
+          <div class="po-round-label">Championship Series</div>
+          <div class="po-round">
+            ${seriesBlock(lb.championshipSeries, 'CS')}
+          </div>
+          <div class="po-champion">
+            <span>League Champion:</span>
+            <strong style="color:${teamColor(lb.champion)}">${teamName(lb.champion)}</strong>
+          </div>
+        </div>`;
+    };
+
+    const wsBlock = po.worldSeries ? (() => {
+      const ws = po.worldSeries;
+      const wWins = ws.winner === ws.team1 ? ws.t1Wins : ws.t2Wins;
+      const lWins = ws.winner === ws.team1 ? ws.t2Wins : ws.t1Wins;
+      return `
+        <div class="po-world-series">
+          <div class="po-ws-title">🏆 World Series</div>
+          <div class="po-ws-result">
+            <div class="po-ws-winner" style="color:${teamColor(ws.winner)}">${teamName(ws.winner)}</div>
+            <div class="po-ws-score">${wWins} — ${lWins}</div>
+            <div class="po-ws-loser">${teamName(ws.loser)}</div>
+          </div>
+          <div class="po-ws-champ">World Series Champion: <strong style="color:${teamColor(ws.winner)}">${teamName(ws.winner)}</strong></div>
+        </div>`;
+    })() : '';
+
+    return `
+      <div class="screen playoffs-screen">
+        <div class="screen-header">
+          <h1>Playoffs</h1>
+          <p>${state.season.year || 2026} MLB Playoffs</p>
+        </div>
+        <div class="po-content">
+          ${wsBlock}
+          <div class="po-leagues">
+            ${leagueBracket('AL')}
+            ${leagueBracket('NL')}
+          </div>
+          ${state.offseasonPhase === 'free_agency' ? `
+            <div class="po-action">
+              <button class="btn btn-primary" data-action="runFreeAgency">Start Free Agency</button>
+            </div>` : ''}
+        </div>
+        ${Comps.bottomNav('standings')}
+      </div>`;
+  },
+
+  // ── Awards Screen ──────────────────────────────────────────────────────────
+
+  awards(app, params = {}) {
+    const { state } = app;
+    const awards = state.awards;
+
+    if (!awards) {
+      return `
+        <div class="screen">
+          <div class="screen-header"><h1>Awards</h1></div>
+          <div class="empty-state"><p>Season awards will be announced at the end of the regular season.</p></div>
+          ${Comps.bottomNav('leaders')}
+        </div>`;
+    }
+
+    const teamColor = (id) => {
+      const m = TEAMS_META.find(t => t.id === id);
+      return m ? m.primary : '#888';
+    };
+
+    const awardCard = (award, title, icon) => {
+      if (!award) return `<div class="award-card"><div class="award-title">${icon} ${title}</div><div class="award-winner empty">Not yet announced</div></div>`;
+      return `
+        <div class="award-card" data-action="viewPlayer" data-player-id="${award.playerId}" style="cursor:pointer">
+          <div class="award-title">${icon} ${title}</div>
+          <div class="award-winner" style="color:${teamColor(award.teamId)}">${award.name}</div>
+          <div class="award-team">${award.teamId} · ${award.stat}</div>
+        </div>`;
+    };
+
+    const allStarBlock = state.allStarResult ? `
+      <div class="award-section">
+        <div class="section-label">All-Star Game</div>
+        <div class="allstar-result">
+          <span class="as-winner">${state.allStarResult.winner} wins</span>
+          <span class="as-score">${state.allStarResult.alScore}–${state.allStarResult.nlScore}</span>
+          <span class="as-mvp">MVP: ${state.allStarResult.mvp} (${state.allStarResult.mvpTeam})</span>
+        </div>
+      </div>` : '';
+
+    return `
+      <div class="screen awards-screen">
+        <div class="screen-header">
+          <h1>Season Awards</h1>
+          <p>${state.season.year || 2026}</p>
+        </div>
+        <div class="awards-content">
+          ${allStarBlock}
+          <div class="award-section">
+            <div class="section-label">American League</div>
+            ${awardCard(awards.AL?.mvp,     'MVP',         '🏆')}
+            ${awardCard(awards.AL?.cyYoung, 'Cy Young',    '⚾')}
+            ${awardCard(awards.AL?.roy,     'Rookie of the Year', '⭐')}
+          </div>
+          <div class="award-section">
+            <div class="section-label">National League</div>
+            ${awardCard(awards.NL?.mvp,     'MVP',         '🏆')}
+            ${awardCard(awards.NL?.cyYoung, 'Cy Young',    '⚾')}
+            ${awardCard(awards.NL?.roy,     'Rookie of the Year', '⭐')}
+          </div>
+        </div>
+        ${Comps.bottomNav('leaders')}
+      </div>`;
+  },
+
+  // ── Offseason Screen ───────────────────────────────────────────────────────
+
+  offseason(app, params = {}) {
+    const { state } = app;
+    const phase = params.phase || state.offseasonPhase;
+
+    const faList = (state.faNews || []).slice(0, 15);
+    const draftList = (state.draftNews || []).slice(0, 30);
+
+    const faBlock = faList.length > 0 ? `
+      <div class="os-section">
+        <div class="section-label">Free Agency Signings</div>
+        ${faList.map(n => `<div class="os-news-item">${n}</div>`).join('')}
+      </div>` : '';
+
+    const draftBlock = draftList.length > 0 ? `
+      <div class="os-section">
+        <div class="section-label">Draft Results (Round 1 + Your Picks)</div>
+        ${draftList.map(n => `<div class="os-news-item">${n}</div>`).join('')}
+      </div>` : '';
+
+    const actionBlock = (() => {
+      if (phase === 'free_agency') {
+        return `<div class="os-action"><p>Run free agency to see veteran players change teams based on budget and team needs.</p>
+          <button class="btn btn-primary" data-action="runFreeAgency">Run Free Agency</button></div>`;
+      } else if (phase === 'draft') {
+        return `<div class="os-action">${faBlock}<p>Time for the MLB Draft! 5 rounds, 30 teams. Worst records pick first.</p>
+          <button class="btn btn-primary" data-action="runDraft">Run Draft</button></div>`;
+      } else if (phase === 'complete') {
+        return `<div class="os-action">${faBlock}${draftBlock}
+          <button class="btn btn-primary" data-action="startNewSeason">Start ${(state.season.year || 2026) + 1} Season</button></div>`;
+      }
+      return '';
+    })();
+
+    return `
+      <div class="screen offseason-screen">
+        <div class="screen-header">
+          <h1>Offseason</h1>
+          <p>${state.season.year || 2026} Offseason</p>
+        </div>
+        <div class="os-content">
+          ${actionBlock || '<div class="empty-state">Offseason not yet started. Complete the playoffs first.</div>'}
+        </div>
+        ${Comps.bottomNav('teamHub')}
+      </div>`;
+  },
+
 };
 
 window.Screens = Screens;

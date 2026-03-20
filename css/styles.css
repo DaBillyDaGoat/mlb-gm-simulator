@@ -603,3 +603,111 @@ html, body {
 .screen, .team-select-content, .player-list, .standings-content, .leaders-content, .schedule-list {
   -webkit-overflow-scrolling: touch;
 }
+
+/* ── Injury Badges ───────────────────────────────────────────── */
+.il-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+.il-dtd  { background: rgba(255,200,0,0.25);  color: #ffc800; }
+.il-il15 { background: rgba(255,100,0,0.25);  color: #ff6400; }
+.il-il60 { background: rgba(220,50,50,0.25);  color: #e53935; }
+.player-row.injured { opacity: 0.65; }
+.injury-item { color: #ff8a65; }
+
+/* ── Payroll Bar ─────────────────────────────────────────────── */
+.payroll-bar-wrap { margin-top: 6px; }
+.payroll-label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 3px; }
+.payroll-bar-bg { height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.payroll-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+.payroll-bar.over-budget { background: var(--danger); }
+
+/* ── Playoffs Screen ─────────────────────────────────────────── */
+.playoffs-screen .po-content { padding: 0 12px 16px; }
+.po-world-series {
+  background: linear-gradient(135deg, rgba(244,200,66,0.12), rgba(244,200,66,0.04));
+  border: 1px solid rgba(244,200,66,0.35);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+.po-ws-title { font-size: 20px; font-weight: 800; color: var(--gold); margin-bottom: 10px; }
+.po-ws-result { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+.po-ws-winner { font-size: 18px; font-weight: 700; }
+.po-ws-score  { font-size: 22px; font-weight: 800; color: var(--text); }
+.po-ws-loser  { font-size: 16px; color: var(--text2); }
+.po-ws-champ  { font-size: 13px; color: var(--text2); margin-top: 4px; }
+.po-ws-champ strong { color: var(--text); }
+
+.po-leagues { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .po-leagues { grid-template-columns: 1fr; } }
+
+.po-league { background: var(--bg2); border-radius: 10px; padding: 12px; }
+.po-league-title { font-size: 15px; font-weight: 700; color: var(--accent); margin-bottom: 10px; text-transform: uppercase; }
+.po-round-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text3); margin: 8px 0 4px; }
+.po-round { display: flex; flex-direction: column; gap: 6px; }
+.po-series {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 8px;
+  border-left: 2px solid var(--border);
+}
+.po-series.user-series { border-left-color: var(--accent); }
+.po-series-label { font-size: 9px; text-transform: uppercase; color: var(--text3); margin-bottom: 3px; }
+.po-winner { font-size: 13px; font-weight: 700; display: flex; justify-content: space-between; }
+.po-loser  { font-size: 12px; color: var(--text2); display: flex; justify-content: space-between; margin-top: 2px; }
+.po-wins { font-weight: 800; }
+.po-champion { margin-top: 10px; font-size: 12px; color: var(--text2); text-align: center; }
+.po-champion strong { display: block; font-size: 14px; margin-top: 2px; }
+.po-action { text-align: center; margin-top: 16px; }
+
+/* ── Awards Screen ───────────────────────────────────────────── */
+.awards-screen .awards-content { padding: 0 12px 16px; }
+.award-section { margin-bottom: 20px; }
+.award-card {
+  background: var(--bg2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+.award-card:active { background: var(--bg3); }
+.award-title  { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text3); margin-bottom: 4px; }
+.award-winner { font-size: 17px; font-weight: 700; }
+.award-team   { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.award-card .empty { color: var(--text3); font-style: italic; }
+.allstar-result {
+  background: var(--bg2);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.as-winner { font-size: 16px; font-weight: 700; color: var(--gold); }
+.as-score  { font-size: 22px; font-weight: 800; }
+.as-mvp    { font-size: 13px; color: var(--text2); }
+
+/* ── Offseason Screen ────────────────────────────────────────── */
+.offseason-screen .os-content { padding: 0 12px 16px; }
+.os-section { margin-bottom: 20px; }
+.os-news-item {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+.os-news-item:last-child { border-bottom: none; }
+.os-action { background: var(--bg2); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.os-action p { font-size: 13px; color: var(--text2); margin: 0 0 12px; }
+.os-action .btn { width: 100%; }
+
+/* ── Player streak badges ────────────────────────────────────── */
+.pr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
