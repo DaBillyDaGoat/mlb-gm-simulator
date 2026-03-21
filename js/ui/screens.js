@@ -164,7 +164,7 @@ const Screens = {
 
   teamHub(app, params = {}) {
     const { state } = app;
-    if (!state) return Screens.mainMenu(app);
+    if (!state) return Screens.titleScreen(app);
 
     const tm     = app.getTeamMeta(state.userTeamId);
     const rec    = app.getUserRecord();
@@ -178,6 +178,16 @@ const Screens = {
     const userStanding = standings[state.userTeamId];
     const day    = state.season.currentDay;
     const phase  = state.season.phase;
+
+    // Rivalry check — must be declared before nextGameCard uses it
+    const isDivisional = (() => {
+      const next = upcoming[0];
+      if (!next) return false;
+      const oppId    = next.homeTeamId === state.userTeamId ? next.awayTeamId : next.homeTeamId;
+      const userMeta = TEAMS_META.find(t => t.id === state.userTeamId);
+      const oppMeta  = TEAMS_META.find(t => t.id === oppId);
+      return userMeta && oppMeta && userMeta.league === oppMeta.league && userMeta.division === oppMeta.division;
+    })();
 
     // Next game card
     const nextGameCard = upcoming.length > 0
@@ -257,15 +267,6 @@ const Screens = {
       ? Comps.milestoneToast(state.pendingMilestones[0].msg) : '';
 
     // Rivalry check
-    const isDivisional = (() => {
-      const next = upcoming[0];
-      if (!next) return false;
-      const oppId = next.homeTeamId === state.userTeamId ? next.awayTeamId : next.homeTeamId;
-      const userMeta = TEAMS_META.find(t => t.id === state.userTeamId);
-      const oppMeta  = TEAMS_META.find(t => t.id === oppId);
-      return userMeta && oppMeta && userMeta.league === oppMeta.league && userMeta.division === oppMeta.division;
-    })();
-
     // Game recap for last played game
     const lastGameRecap = (() => {
       if (!params.lastGame) return '';
