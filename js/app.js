@@ -4,7 +4,8 @@
 'use strict';
 
 const App = {
-  state: null,
+  state:      null,
+  activeSlot: 1,
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,9 @@ const App = {
       this.playerMap[p.id] = p;
     }
 
+    // One-time migration: move old single save → slot 1
+    SaveManager.migrateLegacy();
+
     // Set up global click delegation ONCE — never add this listener again
     document.getElementById('app').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
@@ -32,17 +36,8 @@ const App = {
       this._handleAction(btn.dataset.action, btn.dataset);
     });
 
-    const save = SaveManager.load();
-    if (save) {
-      this.state = save;
-      // Ensure new state fields exist for saves created before these features
-      this._migrateState();
-      // Restore any draft prospects to playerMap
-      this._restoreProspects();
-      this.go('teamHub');
-    } else {
-      this.go('mainMenu');
-    }
+    // Always start at the title screen (slot selection handles continue logic)
+    this.go('titleScreen');
   },
 
   // ── State Migration (backward compat) ─────────────────────────────────────
@@ -101,7 +96,8 @@ const App = {
     app.scrollTop = 0;
 
     switch (screen) {
-      case 'mainMenu':     app.innerHTML = Screens.mainMenu(this); break;
+      case 'titleScreen':  app.innerHTML = Screens.titleScreen(this); break;
+      case 'inGameMenu':   app.innerHTML = Screens.inGameMenu(this, params); break;
       case 'teamSelect':   app.innerHTML = Screens.teamSelect(this); break;
       case 'teamHub':      app.innerHTML = Screens.teamHub(this, params); break;
       case 'roster':       app.innerHTML = Screens.roster(this, params); break;
@@ -136,6 +132,17 @@ const App = {
 
   _handleAction(action, data) {
     switch (action) {
+      // Title screen / slot system
+      case 'newCampaign':    this._newCampaign(parseInt(data.slot)); break;
+      case 'continueSlot':   this._continueSlot(parseInt(data.slot)); break;
+      case 'deleteSlotSave': this._deleteSlotSave(parseInt(data.slot)); break;
+      // In-game menu
+      case 'openInGameMenu': this.go('inGameMenu'); break;
+      case 'closeInGameMenu':this.go('teamHub'); break;
+      case 'saveGame':       this._saveGame(); break;
+      case 'returnToTitle':  this._returnToTitle(); break;
+      case 'deleteActiveSave': this._deleteActiveSave(); break;
+      // Legacy actions (kept for any existing HTML)
       case 'newGame':        this.go('teamSelect'); break;
       case 'continue':       this.go('teamHub'); break;
       case 'selectTeam':     this.startNewGame(data.teamId); break;
@@ -145,7 +152,7 @@ const App = {
       case 'simSeason':      this.simSeason(); break;
       case 'viewBoxScore':   this.go('boxScore', { gameId: data.gameId }); break;
       case 'viewPlayer':     this.go('playerCard', { playerId: data.playerId }); break;
-      case 'deleteSave':     this.deleteSave(); break;
+      case 'deleteSave':     this._deleteActiveSave(); break;
       case 'startPlayoffs':  this.startPlayoffs(); break;
       case 'viewPlayoffs':   this.go('playoffs'); break;
       case 'viewAwards':     this.go('awards'); break;
@@ -183,6 +190,53 @@ const App = {
       // Sound
       case 'toggleSound':    this._toggleSound(); break;
     }
+  },
+
+  // ── Slot / Title Screen Actions ───────────────────────────────────────────
+
+  _newCampaign(slot) {
+    if (!slot || slot < 1 || slot > 3) return;
+    this.activeSlot = slot;
+    this.go('teamSelect');
+  },
+
+  _continueSlot(slot) {
+    if (!slot || slot < 1 || slot > 3) return;
+    const save = SaveManager.load(slot);
+    if (!save) { this.go('titleScreen'); return; }
+    this.activeSlot = slot;
+    this.state = save;
+    this._migrateState();
+    this._restoreProspects();
+    this.go('teamHub');
+  },
+
+  _deleteSlotSave(slot) {
+    if (!slot || slot < 1 || slot > 3) return;
+    if (!confirm(`Delete save in Slot ${slot}? This cannot be undone.`)) return;
+    SaveManager.delete(slot);
+    if (this.activeSlot === slot) {
+      this.state = null;
+    }
+    this.go('titleScreen');
+  },
+
+  _saveGame() {
+    if (this.state) SaveManager.save(this.state, this.activeSlot);
+    this.go('inGameMenu', { saved: true });
+  },
+
+  _returnToTitle() {
+    if (this.state) SaveManager.save(this.state, this.activeSlot);
+    this.state = null;
+    this.go('titleScreen');
+  },
+
+  _deleteActiveSave() {
+    if (!confirm('Delete this save? This cannot be undone.')) return;
+    SaveManager.delete(this.activeSlot);
+    this.state = null;
+    this.go('titleScreen');
   },
 
   // ── New Game ──────────────────────────────────────────────────────────────
@@ -267,7 +321,7 @@ const App = {
       this.state.waiverPool = generateWaiverPool(this.playerMap, teamId, 40);
     }
 
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('teamHub');
   },
 
@@ -307,7 +361,7 @@ const App = {
             this.state.userTeamId, oppId, this.playerMap, TEAMS_META
           );
           this.state.decisionUsedForDay = nextDay;
-          SaveManager.save(this.state);
+          SaveManager.save(this.state, this.activeSlot);
           this.go('teamHub', { showDecision: true });
           return;
         }
@@ -323,7 +377,7 @@ const App = {
       this.state.season.currentDay = nextDay;
       this._advanceDayEffects(nextDay, []);
       this._checkSeasonEnd();
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('teamHub', { simMessage: `Day ${nextDay}: Off day.` });
       return;
     }
@@ -334,7 +388,7 @@ const App = {
       this.state.season.currentDay = nextDay;
       this._advanceDayEffects(nextDay, []);
       this._checkSeasonEnd();
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('teamHub', { simMessage: `☔ Day ${nextDay}: Rain delay! Game rescheduled as doubleheader.` });
       return;
     }
@@ -456,7 +510,7 @@ const App = {
       this.state.boxScores = this.state.boxScores.slice(-30);
     }
 
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
 
     const msg = userGameResult
       ? this._gameResultMessage(userGameResult)
@@ -492,7 +546,7 @@ const App = {
         if (this.state.season.phase !== 'regular_season') break;
         this._simOneDayQuiet();
       }
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('teamHub', { simMessage: `Simulated: Day ${startDay + 1} → Day ${this.state.season.currentDay}` });
     }, 50);
   },
@@ -516,7 +570,7 @@ const App = {
         this._simOneDayQuiet();
         iterations++;
       }
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('teamHub', { simMessage: 'Season simulation complete!' });
     }, 50);
   },
@@ -772,7 +826,7 @@ const App = {
         }
       }
 
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('playoffs');
     }, 100);
   },
@@ -792,7 +846,7 @@ const App = {
         for (const n of faNews.slice(0, 5)) this.state.news.unshift(n);
       }
       this.state.offseasonPhase = 'draft';
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('offseason', { phase: 'draft' });
     }, 80);
   },
@@ -828,7 +882,7 @@ const App = {
         }
       }
       this.state.offseasonPhase = 'complete';
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('offseason', { phase: 'complete' });
     }, 80);
   },
@@ -958,7 +1012,7 @@ const App = {
         this.state.pendingAchievements.push(...newAchs);
       }
 
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('teamHub', { simMessage: `Welcome to the ${newYear} season!` });
     }, 80);
   },
@@ -1052,9 +1106,9 @@ const App = {
   },
 
   deleteSave() {
-    SaveManager.delete();
+    SaveManager.delete(this.activeSlot);
     this.state = null;
-    this.go('mainMenu');
+    this.go('titleScreen');
   },
 
   seasonProgress() {
@@ -1104,7 +1158,7 @@ const App = {
       if (!this.state.lineups) this.state.lineups = {};
       this.state.lineups[this.state.userTeamId] = lineup;
       this.lineupSelect = null;
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('lineup');
     }
   },
@@ -1122,7 +1176,7 @@ const App = {
       if (!this.state.rotations) this.state.rotations = {};
       this.state.rotations[this.state.userTeamId] = rotation;
       this.rotSelect = null;
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
       this.go('rotation');
     }
   },
@@ -1133,7 +1187,7 @@ const App = {
       this.state.bullpenRoles[this.state.userTeamId] = {};
     }
     this.state.bullpenRoles[this.state.userTeamId][playerId] = role;
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('rotation');
   },
 
@@ -1183,7 +1237,7 @@ const App = {
       if (!this.state.tradeHistory) this.state.tradeHistory = [];
       this.state.tradeHistory.push({ summary, day: this.state.season.currentDay });
       this.state.news.unshift(`🔄 TRADE: ${summary}`);
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
 
       result = { accepted: true, message: `${oppMeta.name} accepted! ${summary}.` };
     } else {
@@ -1247,7 +1301,7 @@ const App = {
     this.state.news.unshift(`🔄 ${summary}`);
 
     this.state.pendingTradeOffers = this.state.pendingTradeOffers.filter(o => o.id !== offerId);
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('tradeCenter', { result: { accepted: true, message: summary } });
   },
 
@@ -1256,7 +1310,7 @@ const App = {
     const offer = this.state.pendingTradeOffers.find(o => o.id === offerId);
     const aiMeta = offer ? this.getTeamMeta(offer.fromTeamId) : null;
     this.state.pendingTradeOffers = this.state.pendingTradeOffers.filter(o => o.id !== offerId);
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('tradeCenter', {
       result: { accepted: false, message: `${aiMeta?.name || 'AI team'} trade offer declined.` }
     });
@@ -1328,7 +1382,7 @@ const App = {
 
     const tm = this.getTeamMeta(this.state.userTeamId);
     this.state.news.unshift(`✍️ ${fa.name} (${fa.position}, OVR ${fa.overall}) signed with ${tm.name}!`);
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('freeAgency', { message: `${fa.name} signed! Welcome to ${tm.name}.` });
   },
 
@@ -1416,14 +1470,14 @@ const App = {
     this.state.decisionMod  = mod;
     this.state.pendingDecision = null;
 
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.simDay();
   },
 
   _skipDecision() {
     if (this.state) {
       this.state.pendingDecision = null;
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
     }
     this.simDay();
   },
@@ -1464,7 +1518,7 @@ const App = {
       }
     }
 
-    SaveManager.save(this.state);
+    SaveManager.save(this.state, this.activeSlot);
     this.go('waiverWire', { message: `${player.name} claimed! Welcome to ${tm.name}.` });
   },
 
@@ -1564,7 +1618,7 @@ const App = {
   _dismissAchievement() {
     if (this.state) {
       this.state.pendingAchievements = [];
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
     }
     this.go('teamHub');
   },
@@ -1572,7 +1626,7 @@ const App = {
   _dismissHOF() {
     if (this.state) {
       this.state.pendingHOF = [];
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
     }
     this.go('teamHub');
   },
@@ -1587,7 +1641,7 @@ const App = {
       if (this.state.pendingMilestones?.length > 0) {
         this.state.pendingMilestones.shift(); // remove first shown
       }
-      SaveManager.save(this.state);
+      SaveManager.save(this.state, this.activeSlot);
     }
     this.go('teamHub');
   },

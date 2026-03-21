@@ -11,41 +11,100 @@ function logoImg(teamId, cls = 'team-logo-sm') {
 
 const Screens = {
 
-  // ── Main Menu ─────────────────────────────────────────────────────────────
+  // ── Title Screen (main menu with 3 save slots) ────────────────────────────
 
-  mainMenu(app) {
-    const hasSave = SaveManager.exists();
-    const saveInfo = hasSave && app.state
-      ? (() => {
-          const rec = app.getUserRecord();
-          const tm = app.getTeamMeta(app.state.userTeamId);
-          const pct = Math.round(app.seasonProgress() * 100);
-          return `<p class="save-info">${tm.full} · ${rec.wins}–${rec.losses} · ${pct}% complete</p>`;
-        })()
-      : '';
+  titleScreen(app) {
+    const slots = SaveManager.getAllSlots(); // array of 3 (null = empty)
+
+    const slotCards = slots.map((s, i) => {
+      const num = i + 1;
+      if (!s) {
+        return `
+          <div class="save-slot save-slot-empty">
+            <div class="slot-num">Slot ${num}</div>
+            <div class="slot-empty-label">Empty Slot</div>
+            <button class="btn btn-primary slot-new-btn" data-action="newCampaign" data-slot="${num}">
+              + New Campaign
+            </button>
+          </div>`;
+      }
+      const rec = `${s.wins}–${s.losses}`;
+      const dateStr = s.saveDate
+        ? new Date(s.saveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+      return `
+        <div class="save-slot save-slot-occupied" style="--slot-color:${s.primary}">
+          <div class="slot-header">
+            <span class="slot-num">Slot ${num}</span>
+            <span class="slot-date">${dateStr}</span>
+          </div>
+          <div class="slot-team">
+            ${logoImg(s.teamId, 'team-logo-sm')}
+            <div>
+              <div class="slot-teamname">${s.city} <strong>${s.name}</strong></div>
+              <div class="slot-meta">${rec} · ${s.phaseLabel}</div>
+            </div>
+          </div>
+          <div class="slot-actions">
+            <button class="btn btn-primary slot-continue-btn" data-action="continueSlot" data-slot="${num}">
+              ▶ Continue
+            </button>
+            <button class="btn btn-secondary slot-new-btn-sm" data-action="newCampaign" data-slot="${num}">
+              New
+            </button>
+            <button class="btn btn-danger slot-del-btn" data-action="deleteSlotSave" data-slot="${num}">
+              ✕
+            </button>
+          </div>
+        </div>`;
+    }).join('');
 
     return `
-      <div class="screen menu-screen">
-        <div class="menu-hero">
-          <div class="menu-logo">⚾</div>
-          <h1 class="menu-title">Baseball<br>Franchise<br>Simulator</h1>
-          <p class="menu-subtitle">MLB The Show 26 Rosters · 30 Teams · Full Season</p>
+      <div class="screen title-screen">
+        <div class="title-hero">
+          <div class="title-logo">⚾</div>
+          <h1 class="title-heading">Baseball<br>Franchise<br>Simulator</h1>
+          <p class="title-sub">MLB The Show 26 Rosters · 30 Teams · Full Season</p>
         </div>
 
-        <div class="menu-buttons">
-          ${hasSave ? `
-            <button class="btn btn-primary btn-lg" data-action="continue">
-              ▶ Continue Franchise
+        <div class="title-slots">
+          <div class="slots-label">Select Save Slot</div>
+          ${slotCards}
+        </div>
+
+        <p class="title-version">Phase 2 Alpha · 2026 Rosters</p>
+      </div>`;
+  },
+
+  // ── In-Game Menu ──────────────────────────────────────────────────────────
+
+  inGameMenu(app, params = {}) {
+    const slotNum = app.activeSlot || 1;
+    const savedMsg = params.saved
+      ? `<div class="igm-saved-msg">✅ Game saved to Slot ${slotNum}</div>` : '';
+
+    return `
+      <div class="screen igm-screen">
+        <div class="igm-backdrop"></div>
+        <div class="igm-panel">
+          <div class="igm-title">⚾ Menu</div>
+          <div class="igm-slot-info">Active Save: Slot ${slotNum}</div>
+          ${savedMsg}
+          <div class="igm-buttons">
+            <button class="btn btn-secondary igm-btn" data-action="saveGame">
+              💾 Save Game
             </button>
-            ${saveInfo}
-          ` : ''}
-          <button class="btn ${hasSave ? 'btn-secondary' : 'btn-primary btn-lg'}" data-action="newGame">
-            ${hasSave ? '+ New Game' : '▶ New Game'}
-          </button>
-          ${hasSave ? `<button class="btn btn-danger btn-sm" data-action="deleteSave">Delete Save</button>` : ''}
+            <button class="btn btn-secondary igm-btn" data-action="closeInGameMenu">
+              ← Back to Game
+            </button>
+            <button class="btn btn-secondary igm-btn" data-action="returnToTitle">
+              🏠 Main Menu
+            </button>
+            <button class="btn btn-danger igm-btn" data-action="deleteActiveSave">
+              🗑 Delete Save
+            </button>
+          </div>
         </div>
-
-        <p class="menu-version">Phase 1 Alpha · 2026 Rosters</p>
       </div>`;
   },
 
@@ -86,9 +145,14 @@ const Screens = {
         }).join('')}
       </div>`).join('');
 
+    const slot = app.activeSlot || 1;
     return `
       <div class="screen team-select-screen">
         <div class="screen-header">
+          <div class="screen-header-top">
+            <button class="back-btn" data-action="returnToTitle">← Back</button>
+            <span class="screen-header-slot">Slot ${slot}</span>
+          </div>
           <h1>Choose Your Team</h1>
           <p>Select one of the 30 MLB franchises to manage</p>
         </div>
@@ -224,13 +288,17 @@ const Screens = {
       <div class="screen hub-screen">
         <div class="hub-header" style="--team-primary:${tm.primary};--team-secondary:${tm.secondary}">
           <div class="hub-top-row">
-            ${logoImg(state.userTeamId, 'team-logo-hub')}
-            <div>
-              <div class="hub-teamname">${tm.city} <strong>${tm.name}</strong></div>
-              <div class="hub-record">${rec.wins}–${rec.losses} <span class="hub-pct">.${String(Math.round(pct * 10)).padStart(3,'0')}</span></div>
+            <div class="hub-top-left">
+              ${logoImg(state.userTeamId, 'team-logo-hub')}
+              <div>
+                <div class="hub-teamname">${tm.city} <strong>${tm.name}</strong></div>
+                <div class="hub-record">${rec.wins}–${rec.losses} <span class="hub-pct">.${String(Math.round(pct * 10)).padStart(3,'0')}</span>
+                  <span class="hub-streak-inline">${streakStr(rec.streak)}</span>
+                </div>
+              </div>
             </div>
+            <button class="hub-menu-btn" data-action="openInGameMenu" title="Menu">☰</button>
           </div>
-          <div class="hub-streak">${streakStr(rec.streak)}</div>
           <div class="hub-day">Day ${day} · ${seasonPct}% Complete</div>
         </div>
 

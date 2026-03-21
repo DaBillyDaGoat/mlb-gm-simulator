@@ -1469,3 +1469,252 @@ html, body {
   padding: 2px 6px;
   margin-left: 6px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Title Screen / Save Slot System
+   ═══════════════════════════════════════════════════════════════ */
+
+.title-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding-bottom: 40px;
+}
+
+.title-hero {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 32px;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 30%, rgba(79,142,247,0.18) 0%, transparent 65%);
+}
+
+.title-logo { font-size: 64px; line-height: 1; margin-bottom: 14px; }
+
+.title-heading {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.title-sub { color: var(--text2); font-size: 13px; }
+.title-version { text-align: center; color: var(--text3); font-size: 12px; padding: 8px 0 4px; margin-top: auto; }
+
+/* Save Slots */
+
+.title-slots {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slots-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  margin-bottom: 2px;
+}
+
+.save-slot {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+
+.save-slot-occupied {
+  border-left: 4px solid var(--slot-color, var(--accent));
+}
+
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.slot-num  { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text3); }
+.slot-date { font-size: 11px; color: var(--text3); }
+
+.slot-team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.slot-teamname { font-size: 16px; font-weight: 600; line-height: 1.2; }
+.slot-teamname strong { font-weight: 800; }
+.slot-meta { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+.slot-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.slot-continue-btn { flex: 1; padding: 12px; font-size: 15px; }
+.slot-new-btn-sm   { width: 70px; flex-shrink: 0; padding: 12px 8px; font-size: 13px; }
+.slot-del-btn      { width: 44px; flex-shrink: 0; padding: 12px 8px; font-size: 14px; }
+
+/* Empty slot */
+.save-slot-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-style: dashed;
+  border-color: var(--bg3);
+  background: transparent;
+}
+
+.slot-empty-label {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text3);
+}
+
+.slot-new-btn { width: auto; flex-shrink: 0; padding: 10px 18px; font-size: 14px; }
+
+/* ── Team Select back button ─────────────────────────────────── */
+
+.screen-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.back-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.screen-header-slot {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  background: var(--bg3);
+  padding: 3px 10px;
+  border-radius: 10px;
+}
+
+/* ── Hub Header with menu button ─────────────────────────────── */
+
+.hub-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hub-top-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hub-streak-inline {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  margin-left: 8px;
+  background: rgba(255,255,255,0.12);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.hub-menu-btn {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.85);
+  font-size: 17px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  margin-top: 2px;
+}
+.hub-menu-btn:active { background: rgba(0,0,0,0.5); }
+
+/* ── In-Game Menu Screen ─────────────────────────────────────── */
+
+.igm-screen {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 100dvh;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: none; /* skip the default slide-in */
+}
+
+.igm-panel {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 20px;
+  animation: popupPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.igm-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.igm-slot-info {
+  font-size: 12px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 16px;
+}
+
+.igm-saved-msg {
+  background: rgba(45,211,111,0.15);
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.igm-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.igm-btn {
+  padding: 14px;
+  font-size: 16px;
+  text-align: left;
+}
